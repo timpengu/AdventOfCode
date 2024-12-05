@@ -32,14 +32,18 @@ IEnumerable<(int PageBefore, int PageAfter)> GetConflicts(IList<int> pages) =>
     where pagesMustComeAfter[thisPage].Contains(prevPage)
     select (prevPage, thisPage);
 
+// Use a version of Kahn's algorithm to perform topological sort:
 IList<int> Reorder(IList<int> pages)
 {
+    // Get edges between pages in the list to sort
     List<(int Before, int After)> edges = pages.SelectMany(p1 => pagesMustComeAfter[p1], (p1, p2) => (p1, p2)).ToList();
+
     List<int> orderedPages = new();
     List<int> nextPages;
     do
     {
-        nextPages = pages.Except(orderedPages).Where(page => !edges.Any(e => e.After == page)).ToList();
+        // Add remaining pages with no incoming edges (i.e. not after any other remaining pages)
+        nextPages = pages.Except(orderedPages).Where(page => !edges.Any(e => e.After == page)).ToList();       
         orderedPages.AddRange(nextPages);
         edges.RemoveAll(e => nextPages.Contains(e.Before));
     }
@@ -47,6 +51,14 @@ IList<int> Reorder(IList<int> pages)
 
     return orderedPages;
 }
+
+// Can also implement this very simply just using LINQ with custom comparer:
+IList<int> Reorder2(IList<int> pages) => pages
+    .Order(Comparer<int>.Create((a, b) =>
+        // It would be simpler just to use a HashSet<(int,int)> for this purpose
+        pagesMustComeAfter[a].Contains(b) ? +1 :
+        pagesMustComeAfter[b].Contains(a) ? -1 : 0))
+    .ToList();
 
 foreach (List<int> pageList in pageLists)
 {
@@ -70,4 +82,5 @@ int sumOfOrderedMiddlePages = pageLists.Where(IsOrdered).Sum(SelectMiddlePage);
 Console.WriteLine(sumOfOrderedMiddlePages);
 
 int sumOfReorderedMiddlePages = pageLists.Where(IsDisordered).Select(Reorder).Sum(SelectMiddlePage);
-Console.WriteLine(sumOfReorderedMiddlePages);
+int sumOfReorderedMiddlePages2 = pageLists.Where(IsDisordered).Select(Reorder2).Sum(SelectMiddlePage);
+Console.WriteLine($"{sumOfReorderedMiddlePages} {sumOfReorderedMiddlePages2}");
