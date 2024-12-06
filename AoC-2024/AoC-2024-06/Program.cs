@@ -1,5 +1,4 @@
-﻿
-using MoreLinq;
+﻿using MoreLinq;
 using System.Collections.Immutable;
 
 int verboseLevel = 0; // 0..2
@@ -34,67 +33,54 @@ for (int iy = 0; iy < ys; iy++)
 }
 
 // Part 1
-{
-    var patrol = Patrol(blocks, zInit, dzInit);
+var patrol = Patrol(blocks, zInit, dzInit);
 
-    Console.WriteLine($"Left map after {patrol.Moves.Count} moves");
-    Console.WriteLine($"Distinct positions visited: {CountDistinctPositions(patrol.Moves)}");
-    if (verboseLevel >= 2)
-    {
-        ConsoleWriteMap(blocks, patrol.Moves);
-    }
-    Console.WriteLine();
+Console.WriteLine($"Left map after {patrol.Moves.Count} moves");
+Console.WriteLine($"Distinct positions visited: {CountDistinctPositions(patrol.Moves)}");
+if (verboseLevel >= 2)
+{
+    ConsoleWriteMap(blocks, patrol.Moves);
 }
+Console.WriteLine();
 
 // Part 2
+int loopingSolutions = 0;
+foreach (Coord z in DistinctPositions(patrol.Moves).Where(z => z != zInit)) // exclude starting position
 {
-    int loopingSolutions = 0;
-    for (int iy = 0; iy < ys; iy++)
+    IImmutableSet<Coord> withExtraBlock = blocks.Add(z);
+    
+    var blockedPatrol = Patrol(withExtraBlock, zInit, dzInit);
+    if (blockedPatrol.HasLooped)
     {
-        for (int ix = 0; ix < xs; ix++)
+        ++loopingSolutions;
+
+        if (verboseLevel >= 1)
         {
-            Coord z = (ix, iy);
+            Console.WriteLine($"With extra block @ {z}:");
+            Console.WriteLine($"Looped after {blockedPatrol.Moves.Count} moves");
+            Console.WriteLine($"Distinct positions: {CountDistinctPositions(blockedPatrol.Moves)}");
 
-            if (z == zInit || blocks.Contains(z))
+            if (verboseLevel >= 2)
             {
-                continue; // don't place a block on top of the guard or existing blocks
+                ConsoleWriteMap(withExtraBlock, blockedPatrol.Moves, z);
             }
 
-            IImmutableSet<Coord> withExtraBlock = blocks.Add(z);
-
-            var patrol = Patrol(withExtraBlock, zInit, dzInit);
-            if (patrol.HasLooped)
-            {
-                ++loopingSolutions;
-
-                if (verboseLevel >= 1)
-                {
-                    Console.WriteLine($"With extra block @ {z}:");
-                    Console.WriteLine($"Looped after {patrol.Moves.Count} moves");
-                    Console.WriteLine($"Distinct positions: {CountDistinctPositions(patrol.Moves)}");
-
-                    if (verboseLevel >= 2)
-                    {
-                        ConsoleWriteMap(withExtraBlock, patrol.Moves, z);
-                    }
-
-                    Console.WriteLine();
-                }
-            }
+            Console.WriteLine();
         }
     }
-
-    Console.WriteLine($"Looping solutions with one extra block: {loopingSolutions}");
 }
 
+Console.WriteLine($"Looping solutions with one extra block: {loopingSolutions}");
+
 bool IsInRange(Coord z) => z.X >= 0 && z.X < xs && z.Y >= 0 && z.Y < ys;
-int CountDistinctPositions(IEnumerable<(Coord Z, Coord dZ)> moves) => moves.DistinctBy(s => s.Z).Count();
+
+int CountDistinctPositions(IEnumerable<(Coord Z, Coord dZ)> moves) => DistinctPositions(moves).Count();
+IEnumerable<Coord> DistinctPositions(IEnumerable<(Coord Z, Coord dZ)> moves) => moves.Select(m => m.Z).Distinct();
 
 (IReadOnlyCollection<(Coord Z, Coord dZ)> Moves, bool HasLooped) Patrol(IImmutableSet<Coord> blocks, Coord z, Coord dz)
 {
-    List<(Coord Z, Coord dZ)> moves = new(); // ordered list of moves
-    HashSet<(Coord Z, Coord dZ)> visited = new(); // hash set of moves for loop check (unfortunately no ordered hash set in .NET)
-
+    HashSet<(Coord Z, Coord dZ)> visited = new(); // hash set of moves to detect cycles
+    List<(Coord Z, Coord dZ)> moves = new(); // ordered list of moves (unfortunately no ordered hash set in .NET)
     bool hasLooped = false;
 
     while (IsInRange(z))
@@ -121,9 +107,12 @@ int CountDistinctPositions(IEnumerable<(Coord Z, Coord dZ)> moves) => moves.Dist
 void ConsoleWriteMap(IImmutableSet<Coord> blocks, IReadOnlyCollection<(Coord Z, Coord dZ)> moves, Coord? zExtraBlock = null)
 {
     Coord zStart = moves.Any() ? moves.First().Z : (-1, -1);
-    ILookup<Coord, Coord> directionsByPosition = moves
-        .Concat(moves.Pairwise((m1, m2) => (m1.Z, m2.dZ))) // include new direction if it changes
-        .ToLookup(m => m.Z, m => m.dZ);
+    IDictionary<Coord, (bool X, bool Y)> hasMoves = moves
+        .Concat(moves.Pairwise((m1, m2) => (m1.Z, m2.dZ))) // include next direction when it changes 
+        .GroupBy(m => m.Z, m => m.dZ)
+        .ToDictionary(
+            g => g.Key,
+            g => (HasX: g.Any(dz => dz.X != 0), HasY: g.Any(dz => dz.Y != 0)));
 
     for (int iy = 0; iy < ys; iy++)
     {
@@ -131,15 +120,13 @@ void ConsoleWriteMap(IImmutableSet<Coord> blocks, IReadOnlyCollection<(Coord Z, 
         {
             Coord z = (ix, iy);
 
-            List<Coord> dirs = directionsByPosition[z].ToList();
-            bool hasMoveH = dirs.Any(dz => dz.X != 0);
-            bool hasMoveY = dirs.Any(dz => dz.Y != 0);
+            hasMoves.TryGetValue(z, out (bool X, bool Y) hasMove);
 
             Console.Write(
                 z == zStart ? '^' :
                 z == zExtraBlock ? 'O' :
                 blocks.Contains(z) ? '#' :
-                (hasMoveH, hasMoveY) switch
+                (hasMove.X, hasMove.Y) switch
                 {
                     (true, false) => '-',
                     (false, true) => '|',
