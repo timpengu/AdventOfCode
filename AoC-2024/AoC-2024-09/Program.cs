@@ -3,12 +3,14 @@ using System.Diagnostics;
 
 internal static class Program
 {
+    static int VerboseLevel = 2;
+
     const int FreeId = -1;
 
     public static void Main(string[] args)
     {
         List<(int FileLen, int FreeLen)> input = new(
-            File.ReadLines("input.txt")
+            File.ReadLines("inputSample.txt")
                 .Single()
                 .Select(ToDigit)
                 .Batch(2, d => (d.First(), d.Skip(1).FirstOrDefault()))
@@ -30,6 +32,11 @@ internal static class Program
 
         while (idxFree > 0 && idxFile > 0 && idxFree < idxFile)
         {
+            if (VerboseLevel >= 2)
+            {
+                WriteBlocksToConsole(blocks);
+            }
+
             Debug.Assert(blocks[idxFree].IsFree());
             Debug.Assert(blocks[idxFile].IsFile());
 
@@ -38,6 +45,11 @@ internal static class Program
 
             idxFree = blocks.FindIndex(idxFree, IsFree);
             idxFile = blocks.FindLastIndex(idxFile, IsFile);
+        }
+
+        if (VerboseLevel >= 1)
+        {
+            WriteBlocksToConsole(blocks);
         }
 
         return blocks;
@@ -49,8 +61,15 @@ internal static class Program
             .UnpackChunks() // in block order
             .Partition(IsFile, (file, free) => (file.ToList(), free.ToList()));
 
+        int totalLen = fileList.Sum(f => f.Len) + freeList.Sum(f => f.Len);
+
         for (int fileIndex = fileList.Count - 1; fileIndex >= 0; --fileIndex)
         {
+            if (VerboseLevel >= 2)
+            {
+                WriteBlocksToConsole(fileList.ToBlocks(totalLen));
+            }
+
             Chunk file = fileList[fileIndex];
 
             int freeIndex = Enumerable.Range(0, freeList.Count)
@@ -65,7 +84,14 @@ internal static class Program
             }
         }
 
-        return fileList.ToBlocks();
+        List<int> blocks = fileList.ToBlocks(totalLen).ToList();
+
+        if (VerboseLevel >= 1)
+        {
+            WriteBlocksToConsole(blocks);
+        }
+
+        return blocks;
     }
 
     static IEnumerable<int> ToBlocks(this IEnumerable<Chunk> files, int minBlocks = 0)
@@ -100,6 +126,18 @@ internal static class Program
             yield return new Chunk(FreeId, blockIndex, freeLen);
             blockIndex += freeLen;
         }
+    }
+
+    static void WriteBlocksToConsole(IEnumerable<int> blocks)
+    {
+        ConsoleColor[] colours = { ConsoleColor.Red, ConsoleColor.Yellow, ConsoleColor.Green, ConsoleColor.Cyan, ConsoleColor.Blue, ConsoleColor.Magenta };
+        foreach(int id in blocks)
+        {
+            Console.ForegroundColor = id.IsFree() ? ConsoleColor.White : colours[id % colours.Length];
+            Console.Write(id.IsFree() ? ". " : $"{id} ");
+        }
+        Console.ForegroundColor = ConsoleColor.White;
+        Console.WriteLine();
     }
 
     record struct Chunk(int Id, int Block, int Len);
