@@ -1,18 +1,6 @@
 ﻿const char Sentinel = ' ';
 
-Func<Coord, Coord>[] rotations =
-{
-    z => (z.X, z.Y),   // 0°
-    z => (-z.Y, z.X),  // 90°
-    z => (-z.X, -z.Y), // 180°
-    z => (z.Y, -z.X),  // 270°
-};
-
-Coord neighbourOffset = (0, 1);
-Coord[] neighbourOffsets = rotations.Select(rotate => rotate(neighbourOffset)).ToArray();
-
-Coord[] sideDetectKernel = { (0, 0), (1, 0), (0, 1), (1, 1) };
-Coord[][] sideDetectKernels = rotations.Select(rotate => Transform(sideDetectKernel, rotate)).ToArray();
+Coord[] directions = { (+1, 0), (0, +1), (-1, 0), (0, -1) };
 
 IList<string> lines = File.ReadLines("inputSample.txt").ToList();
 int xs = lines.Select(x => x.Length).Distinct().Single();
@@ -87,19 +75,19 @@ int CountPerimeter(Coord z) // counts neighbours of z outside region
     return GetNeighbours(z).Count(zn => GetValue(zn) != value);
 }
 
-int CountSides(Coord z) => sideDetectKernels.Count(k => HasSide(z, k)); // counts sides at z in each direction
-bool HasSide(Coord z, Coord[] kernel) // detects a side at z in the direction defined by kernel
+int CountSides(Coord z) => directions.Count(dz => HasSide(z, dz)); // counts sides at z in each direction
+bool HasSide(Coord z, Coord di) // detects a side at z facing direction di
 {
     char value = GetValue(z);
-    bool[] isRegion = kernel.Select(dz => GetValue(z + dz) == value).ToArray();
-    bool hasEdgeHere = isRegion[0] && !isRegion[1];
-    bool hasEdgeNext = isRegion[2] && !isRegion[3];
+    bool IsInRegion(Coord z2) => GetValue(z2) == value;
+    
+    Coord dj = (-di.Y, di.X); // rotate 90° to form orthogonal basis di,dj
+    bool hasEdgeHere = /*IsInRegion(z) && */ !IsInRegion(z + di); // detect edge at z facing di
+    bool hasEdgeNext = IsInRegion(z + dj) && !IsInRegion(z + di + dj); // detect edge at (z + dj) facing di
     return hasEdgeHere && !hasEdgeNext;
 }
 
-IEnumerable<Coord> GetNeighbours(Coord z) => neighbourOffsets.Select(dz => z + dz);
-Coord[] Transform(Coord[] zs, Func<Coord, Coord> transformation) => zs.Select(transformation).ToArray();
-
+IEnumerable<Coord> GetNeighbours(Coord z) => directions.Select(dz => z + dz);
 char GetValue(Coord z) => IsInRange(z) ? lines[z.Y][z.X] : Sentinel;
 bool IsInRange(Coord z) => z.X >= 0 && z.X < xs && z.Y >= 0 && z.Y < ys;
 
