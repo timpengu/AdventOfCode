@@ -12,33 +12,43 @@ internal static class Program
         // Part 1
         int time = 100;
         List<Coord> positions = inputs.GetPositions(bounds, time).ToList();
+        (int q1, int q2, int q3, int q4) = CalcQuadFactors(positions, bounds);
+        ConsoleWriteMap2(positions, bounds);
+        Console.WriteLine($"Time={time}: {q1} * {q2} * {q3} * {q4} = {(q1, q2, q3, q4).ToSafetyFactor()}\n");
 
+        // Part 2
+        IEnumerable<(int Time, int Factor, double StdDev)> interestingTimes =
+            Enumerable.Range(0, 20000)
+            .Select(time =>
+            {
+                List<Coord> positions = inputs.GetPositions(bounds, time).ToList();
+                return (
+                    Time: time,
+                    Factor: positions.CalcQuadFactors(bounds).ToSafetyFactor(),
+                    StdDev: positions.CalcStdDev()
+                );
+            })
+            .OrderBy(x => x.StdDev); // could have used Factor (clue was in part 1!)
+
+        foreach(var t in interestingTimes.Take(1))
+        {
+            ConsoleWriteMap2(inputs.GetPositions(bounds, t.Time), bounds);
+            Console.WriteLine($"Time={t.Time}: Factor={t.Factor} StdDev={t.StdDev:f2}\n");
+        }
+    }
+
+    private static IEnumerable<Coord> GetPositions(this IEnumerable<Input> inputs, Coord size, int time) => inputs.Select(i => (i.z + time * i.dz) % size);
+
+    private static int ToSafetyFactor(this (int q1, int q2, int q3, int q4) f) => f.q1 * f.q2 * f.q3 * f.q4;
+    private static (int,int,int,int) CalcQuadFactors(this IEnumerable<Coord> positions, Coord bounds)
+    {
         Coord centre = (bounds.X / 2, bounds.Y / 2);
         int q1 = positions.Count(z => z.X < centre.X && z.Y < centre.Y);
         int q2 = positions.Count(z => z.X > centre.X && z.Y < centre.Y);
         int q3 = positions.Count(z => z.X < centre.X && z.Y > centre.Y);
         int q4 = positions.Count(z => z.X > centre.X && z.Y > centre.Y);
-        int factor = q1 * q2 * q3 * q4;
-
-        ConsoleWriteMap2(positions, bounds);
-        Console.WriteLine($"Time={time}: {q1} * {q2} * {q3} * {q4} = {factor}\n");
-
-        // Part 2
-        IEnumerable<(int Time, double StdDev)> interestingTimes =
-            Enumerable.Range(0, 100000)
-            .Select(time => (Time: time, StdDev: inputs.GetPositions(bounds, time).CalcStdDev()))
-            .OrderBy(x => x.StdDev);
-
-        foreach(var t in interestingTimes.Take(10))
-        {
-            ConsoleWriteMap2(inputs.GetPositions(bounds, t.Time), bounds);
-            Console.WriteLine($"Time={t.Time}: StdDev={t.StdDev:f2}\n");
-            
-            Console.ReadLine();
-        }
+        return (q1, q2, q3, q4);
     }
-
-    private static IEnumerable<Coord> GetPositions(this IEnumerable<Input> inputs, Coord size, int time) => inputs.Select(i => (i.z + time * i.dz) % size);
 
     private static double CalcStdDev(this IEnumerable<Coord> positions)
     {
