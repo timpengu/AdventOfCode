@@ -1,91 +1,154 @@
-﻿
-using MoreLinq;
-using System.Collections.Immutable;
+﻿using MoreLinq;
 
-Coord[] Directions = [(0, +1), (+1, 0), (0, -1), (-1, 0)];
+Coord InitialDirection = (+1, 0); // start facing east
 
-IList<string> lines = File.ReadLines("inputSample.txt").ToList();
+IList<string> lines = File.ReadLines("input.txt").ToList();
 int xs = lines.Select(x => x.Length).Distinct().Single();
 int ys = lines.Count;
 
-(bool[,] isWall, Coord zStart, Coord zEnd) = Parse(lines);
+(IList<Coord> zs, Coord zStart, Coord zEnd) = Parse(lines);
+IList<Coord> path = FindShortestPath(zs, zStart, zEnd);
+(int steps, int turns, int score) = CalcPathMetrics(path);
 
-var results =
-    from path in FindPaths(zStart, zEnd)
-    let metrics = CalcPathMetrics(path)
-    orderby metrics.Score
-    select (Path:path, metrics.Score, metrics.Steps, metrics.Turns);
-
-var result = results.First();
-//foreach (var result in results.Take(10))
-{
-    Console.WriteLine($"Score:{result.Score} Steps:{result.Steps} Turns:{result.Turns} Path:{String.Join("", result.Path)}");
-}
+Console.WriteLine($"Score:{score} Steps:{steps} Turns:{turns} Path:{String.Join("", path)}");
 
 (int Steps, int Turns, int Score) CalcPathMetrics(IList<Coord> path)
 {
     int steps = path.Count - 1;
     int turns = path
         .Pairwise((z1, z2) => z2 - z1)
-        .Prepend((+1, 0)) // start facing east
+        .Prepend(InitialDirection)
         .Pairwise((dz1, dz2) => (dz1, dz2))
         .Count(step => step.dz1 != step.dz2);
 
     return (steps, turns, steps + turns * 1000);
 }
 
-IEnumerable<IList<Coord>> FindPaths(Coord zStart, Coord zTarget) => ExtendPath(ImmutableStack.Create(zStart), zTarget);
-IEnumerable<IList<Coord>> ExtendPath(IImmutableStack<Coord> path, Coord zTarget)
+IList<Coord> FindShortestPath(IEnumerable<Coord> zs, Coord zStart, Coord zEnd)
 {
-    Coord z = path.Peek();
-    Coord dz = path.Take(2).Pairwise((z2, z1) => z2 - z1).FallbackIfEmpty((+1, 0)).Single();
-    Coord[] directions = [dz, (-dz.Y, dz.X), (dz.Y, -dz.X)]; // (-dz.X, -dz.Y) go back? (can't go west at start)
+    Dictionary<Coord, Node> nodes = zs.ToDictionary(z => z, z => new Node(Cost:int.MaxValue));
+    nodes[zStart] = new Node(Cost:0);
+    
+    HashSet<Coord> unvisited = nodes.Keys.ToHashSet();
+    while (unvisited.Count > 0)
+    {
+        Coord z = unvisited.MinBy(z => nodes[z].Cost);
+        Node node = nodes[z];
 
-    return z == zTarget
-        ? Enumerable.Repeat(path.Reverse().ToList(), 1) // return this path
-        : directions
-            .Select(dz => z + dz)
-            .Where(IsPath)
-            .Where(zNext => !path.Contains(zNext)) // avoid cycles
-            .SelectMany(zNext => ExtendPath(path.Push(zNext), zTarget)); // extend path recursively
+        // Console.WriteLine($"{z} => Cost:{zNode.Cost} Facing:{zNode.Facing} Prev:{zNode.Previous}");
+
+        if (z == zEnd)
+        {
+            Console.WriteLine($"Found target with cost {node.Cost}");
+
+            var path = new Stack<Coord>();
+            Coord? zPath = z;
+            while (zPath.HasValue)
+            {
+                path.Push(zPath.Value);
+                zPath = nodes[zPath.Value].zPrev;
+            }
+
+            ConsoleWritePaths(nodes, path);
+            return path.ToList();
+        }
+
+        var neighbours = GetDirections(z, node).Select(dz => z + dz).Where(unvisited.Contains);
+        foreach (Coord zNext in neighbours)
+        {
+            Coord dzPrev = GetFacing(z, node);
+            Coord dzNext = zNext - z;
+            int cost = node.Cost + 1 + (dzNext == dzPrev ? 0 : 1000);
+
+            if (cost < nodes[zNext].Cost)
+            {
+                nodes[zNext] = new Node(cost, z);
+            }
+        }
+
+        unvisited.Remove(z);
+    }
+
+    throw new Exception("Cannot find any path");
 }
 
-IEnumerable<Coord> GetNeighbours(Coord z) => Directions.Select(dz => z + dz);
-bool IsPath(Coord z) => IsInRange(z) && !isWall[z.X, z.Y];
-bool IsInRange(Coord z) => z.X >= 0 && z.X < xs && z.Y >= 0 && z.Y < ys;
-
-(bool[,], Coord, Coord) Parse(IList<string> lines)
+IEnumerable<Coord> GetDirections(Coord z, Node node)
 {
-    bool[,] isWall = new bool[xs, ys];
+    Coord dz = GetFacing(z, node);
+    yield return dz; // straight ahead
+    yield return (-dz.Y, dz.X); // turn left
+    yield return (dz.Y, -dz.X); // turn right
+}
+
+Coord GetFacing(Coord z, Node node) => z - node.zPrev ?? InitialDirection;
+
+void ConsoleWritePaths(IDictionary<Coord, Node> nodes, IEnumerable<Coord> path)
+{
+    var pathSet = path.ToHashSet();
+    foreach (int y in Enumerable.Range(0, ys))
+    {
+        foreach (int x in Enumerable.Range(0, xs))
+        {
+            Coord z = (x, y);
+
+            if (!nodes.TryGetValue(z, out Node node))
+            {
+                Console.ForegroundColor = ConsoleColor.DarkGray;
+                Console.Write('#');
+                continue;
+            }
+
+            Console.ForegroundColor = pathSet.Contains(z) ? ConsoleColor.Green : ConsoleColor.DarkRed;
+            Console.Write(
+                (z - node.zPrev ?? (0, 0)) switch
+                {
+                    (+1, 0) => '>',
+                    (0, +1) => 'v',
+                    (-1, 0) => '<',
+                    (0, -1) => '^',
+                    _ => ' '
+                });
+        }
+
+        Console.ForegroundColor = ConsoleColor.White;
+        Console.WriteLine();
+    }
+    Console.WriteLine();
+
+}
+
+(IList<Coord>, Coord, Coord) Parse(IList<string> lines)
+{
+    List<Coord> nodes = new();
     Coord? start = null, end = null;
     foreach (int x in Enumerable.Range(0, xs))
     {
         foreach (int y in Enumerable.Range(0, ys))
         {
             char c = lines[y][x];
-            switch (c)
+            if (c == '#')
+                continue; // ignore walls
+
+            nodes.Add((x, y));
+
+            if (c == 'S')
             {
-                case '.' or '#':
-                    isWall[x, y] = (c == '#');
-                    break;
-                case 'S':
-                    start = (x, y);
-                    break;
-                case 'E':
-                    end = (x, y);
-                    break;
-                default:
-                    throw new InvalidDataException($"Invalid input character: '{c}'");
+                start = (x, y);
+            }
+            else if (c == 'E')
+            {
+                end = (x, y);
             }
         }
     }
     return (
-        isWall,
+        nodes,
         start ?? throw new InvalidDataException("No start position"),
         end ?? throw new InvalidDataException("No end position")
     );
 }
 
+record struct Node(int Cost, Coord? zPrev = null);
 record struct Coord(int X, int Y)
 {
     public static implicit operator Coord((int X, int Y) tuple) => new Coord(tuple.X, tuple.Y);
