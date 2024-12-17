@@ -1,113 +1,170 @@
 ﻿using MoreLinq;
 
+const int StepCost = 1;
+const int TurnCost = 1000;
+
 Coord InitialDirection = (+1, 0); // start facing east
+Coord[] Directions = [(+1, 0), (0, +1), (-1, 0), (0, -1)];
 
 IList<string> lines = File.ReadLines("input.txt").ToList();
 int xs = lines.Select(x => x.Length).Distinct().Single();
 int ys = lines.Count;
 
 (IList<Coord> zs, Coord zStart, Coord zEnd) = Parse(lines);
-IList<Coord> path = FindShortestPath(zs, zStart, zEnd);
+
+// part 1
+IList<State> path = FindShortestPaths(zs, zStart, zEnd, false);
 (int steps, int turns, int score) = CalcPathMetrics(path);
+Console.WriteLine($"Score:{score} (Steps:{steps} Turns:{turns})\n");
 
-Console.WriteLine($"Score:{score} Steps:{steps} Turns:{turns} Path:{String.Join("", path)}");
+// part 2
+IList<State> paths = FindShortestPaths(zs, zStart, zEnd, true);
+int zCount = paths.Select(p => p.Z).Distinct().Count();
+Console.WriteLine($"Positions on shortest paths: {zCount}\n");
 
-(int Steps, int Turns, int Score) CalcPathMetrics(IList<Coord> path)
+(int Steps, int Turns, int Score) CalcPathMetrics(IList<State> path)
 {
-    int steps = path.Count - 1;
-    int turns = path
-        .Pairwise((z1, z2) => z2 - z1)
-        .Prepend(InitialDirection)
-        .Pairwise((dz1, dz2) => (dz1, dz2))
-        .Count(step => step.dz1 != step.dz2);
-
-    return (steps, turns, steps + turns * 1000);
+    int steps = path.Select(s => s.Z).Distinct().Count() - 1;
+    int turns = path.Select(s => s.dZ).Pairwise((dz1, dz2) => (dz1, dz2)).Count(s => s.dz1 != s.dz2);
+    return (steps, turns, steps * StepCost + turns * TurnCost);
 }
 
-IList<Coord> FindShortestPath(IEnumerable<Coord> zs, Coord zStart, Coord zEnd)
+IList<State> FindShortestPaths(IEnumerable<Coord> zs, Coord zStart, Coord zTarget, bool includeAll)
 {
-    Dictionary<Coord, Node> nodes = zs.ToDictionary(z => z, z => new Node(Cost:int.MaxValue));
-    nodes[zStart] = new Node(Cost:0);
-    
-    HashSet<Coord> unvisited = nodes.Keys.ToHashSet();
-    while (unvisited.Count > 0)
+    // build a graph of traversable states
+    HashSet<Coord> coords = zs.ToHashSet();
+    Dictionary<State, Node> nodes = new(
+        from z in coords
+        from dz in Directions
+        where (coords.Contains(z - dz) && z != zStart) || (coords.Contains(z + dz) && z != zEnd) // can leave or enter in this direction
+        let state = new State(z, dz)
+        select KeyValuePair.Create(state, new Node(state))
+    );
+
+    State initialState = (zStart, InitialDirection);
+    nodes[initialState] = new Node(initialState) { Cost = 0 };
+
+    // Dijkstra to find shortest paths:
+    HashSet<State> unvisited = new(nodes.Keys);
+    PriorityQueue<State, int> pq = new([(initialState, 0)]);
+    while (pq.TryDequeue(out State state, out _))
     {
-        Coord z = unvisited.MinBy(z => nodes[z].Cost);
-        Node node = nodes[z];
+        unvisited.Remove(state);
 
-        // Console.WriteLine($"{z} => Cost:{zNode.Cost} Facing:{zNode.Facing} Prev:{zNode.Previous}");
+        Node node = nodes[state];
 
-        if (z == zEnd)
+        foreach (var move in GetMoves(state).Where(move => unvisited.Contains(move.State)))
         {
-            Console.WriteLine($"Found target with cost {node.Cost}");
+            Node nextNode = nodes[move.State];
 
-            var path = new Stack<Coord>();
-            Coord? zPath = z;
-            while (zPath.HasValue)
+            int cost = node.Cost + move.Cost;
+            if (cost < nextNode.Cost)
             {
-                path.Push(zPath.Value);
-                zPath = nodes[zPath.Value].zPrev;
+                nextNode.Prev = [node]; // this is now the shortest path
+                nextNode.Cost = cost;
+
+                // update priority
+                pq.Remove(move.State, out _, out _);
+                pq.Enqueue(move.State, cost);
             }
-
-            ConsoleWritePaths(nodes, path);
-            return path.ToList();
-        }
-
-        var neighbours = GetDirections(z, node).Select(dz => z + dz).Where(unvisited.Contains);
-        foreach (Coord zNext in neighbours)
-        {
-            Coord dzPrev = GetFacing(z, node);
-            Coord dzNext = zNext - z;
-            int cost = node.Cost + 1 + (dzNext == dzPrev ? 0 : 1000);
-
-            if (cost < nodes[zNext].Cost)
+            else if (cost == nextNode.Cost && includeAll)
             {
-                nodes[zNext] = new Node(cost, z);
-            }
+                nextNode.Prev.Add(node); // add this to the shortest paths
+            }    
         }
-
-        unvisited.Remove(z);
     }
 
-    throw new Exception("Cannot find any path");
+    List<State> paths = new(
+        GetMinStates(nodes, zTarget) // there may be multiple shortest paths to the target from different directions
+        .SelectMany(targetState => GetPaths(nodes, targetState))
+    );
+
+    // TODO: change Node.Prev to Node.Next and solve in reverse?
+    paths.Reverse(); // list path/s from start to end
+
+    ConsoleWritePaths(nodes, paths);
+
+    return paths;
 }
 
-IEnumerable<Coord> GetDirections(Coord z, Node node)
+IEnumerable<(State State, int Cost)> GetMoves(State s)
 {
-    Coord dz = GetFacing(z, node);
-    yield return dz; // straight ahead
-    yield return (-dz.Y, dz.X); // turn left
-    yield return (dz.Y, -dz.X); // turn right
+    yield return ((s.Z + s.dZ, s.dZ), StepCost); // move forward
+    yield return ((s.Z, s.dZ.RotateLeft()), TurnCost); // turn left
+    yield return ((s.Z, s.dZ.RotateRight()), TurnCost); // turn right
 }
 
-Coord GetFacing(Coord z, Node node) => z - node.zPrev ?? InitialDirection;
+IEnumerable<State> GetMinStates(IReadOnlyDictionary<State, Node> nodes, Coord zTarget) =>
+    Directions
+    .Select(dz => new State(zTarget, dz))
+    .Where(nodes.ContainsKey)
+    .Select(state => nodes[state])
+    .WhereMinBy(node => node.Cost)
+    .Select(node => node.State);
 
-void ConsoleWritePaths(IDictionary<Coord, Node> nodes, IEnumerable<Coord> path)
+IEnumerable<State> GetPaths(IReadOnlyDictionary<State, Node> nodes, State target)
 {
-    var pathSet = path.ToHashSet();
+    HashSet<State> visited = new();
+    Queue<State> toVisit = new([target]);
+
+    while (toVisit.TryDequeue(out State state))
+    {
+        if (visited.Add(state))
+        {
+            yield return state;
+
+            var prevStates = nodes[state].Prev.Select(p => p.State);
+            foreach (var prevState in prevStates)
+            {
+                toVisit.Enqueue(prevState);
+            }
+        }
+    }
+}
+
+void ConsoleWritePaths(IDictionary<State, Node> nodes, IEnumerable<State> paths)
+{
+    ISet<Coord> pathsLookup = paths.Select(s => s.Z).ToHashSet();
+    ILookup<Coord, Node> nodesLookup = nodes.ToLookup(n => n.Key.Z, n => n.Value);
+
+    IEnumerable<Coord> GetPrevs(IEnumerable<Node> nodes) => nodes
+        .WhereMinBy(node => node.Cost)
+        .SelectMany(node => node.Prev)
+        .Select(prevNode => prevNode.State.Z)
+        .Distinct();
+
+    Dictionary<Coord, List<Coord>> minCostNodes = nodes
+        .GroupBy(n => n.Key.Z, n => n.Value)
+        .ToDictionary(g => g.Key, g => GetPrevs(g).ToList());
+
     foreach (int y in Enumerable.Range(0, ys))
     {
         foreach (int x in Enumerable.Range(0, xs))
         {
             Coord z = (x, y);
 
-            if (!nodes.TryGetValue(z, out Node node))
+            if (!minCostNodes.TryGetValue(z, out List<Coord>? zPrevs))
             {
                 Console.ForegroundColor = ConsoleColor.DarkGray;
                 Console.Write('#');
                 continue;
             }
 
-            Console.ForegroundColor = pathSet.Contains(z) ? ConsoleColor.Green : ConsoleColor.DarkRed;
-            Console.Write(
-                (z - node.zPrev ?? (0, 0)) switch
+            Console.ForegroundColor = pathsLookup.Contains(z) ? ConsoleColor.Green : ConsoleColor.DarkRed;
+
+            Console.Write(zPrevs.Count switch
+            {
+                > 1 => '@',
+                0 => '.',
+                _ => (z - zPrevs.Single()) switch
                 {
                     (+1, 0) => '>',
                     (0, +1) => 'v',
                     (-1, 0) => '<',
                     (0, -1) => '^',
-                    _ => ' '
-                });
+                    _ => '?'
+                }
+            });
         }
 
         Console.ForegroundColor = ConsoleColor.White;
@@ -119,7 +176,7 @@ void ConsoleWritePaths(IDictionary<Coord, Node> nodes, IEnumerable<Coord> path)
 
 (IList<Coord>, Coord, Coord) Parse(IList<string> lines)
 {
-    List<Coord> nodes = new();
+    List<Coord> coords = new();
     Coord? start = null, end = null;
     foreach (int x in Enumerable.Range(0, xs))
     {
@@ -129,7 +186,7 @@ void ConsoleWritePaths(IDictionary<Coord, Node> nodes, IEnumerable<Coord> path)
             if (c == '#')
                 continue; // ignore walls
 
-            nodes.Add((x, y));
+            coords.Add((x, y));
 
             if (c == 'S')
             {
@@ -142,17 +199,8 @@ void ConsoleWritePaths(IDictionary<Coord, Node> nodes, IEnumerable<Coord> path)
         }
     }
     return (
-        nodes,
+        coords,
         start ?? throw new InvalidDataException("No start position"),
         end ?? throw new InvalidDataException("No end position")
     );
-}
-
-record struct Node(int Cost, Coord? zPrev = null);
-record struct Coord(int X, int Y)
-{
-    public static implicit operator Coord((int X, int Y) tuple) => new Coord(tuple.X, tuple.Y);
-    public static Coord operator +(Coord a, Coord b) => new Coord(a.X + b.X, a.Y + b.Y);
-    public static Coord operator -(Coord a, Coord b) => new Coord(a.X - b.X, a.Y - b.Y);
-    public override string ToString() => $"({X},{Y})";
 }
