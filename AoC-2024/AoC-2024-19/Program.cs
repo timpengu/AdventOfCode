@@ -1,11 +1,10 @@
-﻿
-using System.Collections.Immutable;
+﻿using System.Collections.Immutable;
 using System.Diagnostics;
 
 List<string> patterns = new();
 List<string> designs = new();
 
-using (StreamReader file = new("inputSample.txt"))
+using (StreamReader file = new("input.txt"))
 {
     patterns.AddRange(
         file.ReadLine()
@@ -28,48 +27,72 @@ Debug.Assert(patterns.All(s => s.Length > 0));
 Debug.Assert(designs.Count > 0);
 Debug.Assert(designs.All(s => s.Length > 0));
 
-Console.WriteLine($"Patterns: {patterns.Count} \tAverage length: {patterns.Average(p => p.Length)}");
-Console.WriteLine($"Designs:  {designs.Count}  \tAverage length: {designs.Average(p => p.Length)}");
+Console.WriteLine($"Patterns: {patterns.Count} \tMin,Max,Avg length: {patterns.Min(p => p.Length)}, {patterns.Max(p => p.Length)}, {patterns.Average(p => p.Length)}");
+Console.WriteLine($"Designs:  {designs.Count}  \tMin,Max,Avg length: {designs.Min(p => p.Length)}, {designs.Max(p => p.Length)}, {designs.Average(p => p.Length)}");
+
+Stopwatch sw = Stopwatch.StartNew();
 
 // part 1
-int matchedDesigns = designs.Count(design => Match(design, patterns).Any());
-Console.WriteLine($"\nMatching designs: {matchedDesigns}");
+List<string> matchedDesigns = new(designs
+    .OrderBy(design => design)
+    .Where(design => GetMatches(design, patterns).Any()) // just find a single solution for each design 
+);
+Console.WriteLine($"\nPossible designs: {matchedDesigns.Count} @ {sw.Elapsed}");
 
 // part 2
-int totalMatches = 0;
-foreach (var design in designs)
+Console.WriteLine($"\n{"Design",-60} {"Combinations",20}");
+long totalMatches = 0;
+foreach (var design in matchedDesigns)
 {
-    IList<IList<int>> matches = Match(design, patterns).ToList();
-    totalMatches += matches.Count;
+    long matches = CountMatches(design, patterns);
+    totalMatches += matches;
 
-    Console.WriteLine($"\nMatch '{design}' combinations: {matches.Count}");
-    foreach (var match in matches)
-    {
-        string combo = String.Join(" ", match.Select(i => patterns[i]));
-        Console.WriteLine(combo);
-    }
+    Console.WriteLine($"{design,-60} {matches,20}");
 }
-Console.WriteLine($"\nTotal matching combinations: {totalMatches}");
+Console.WriteLine($"\nTotal matching combinations: {totalMatches} @ {sw.Elapsed}");
 
-IEnumerable<IList<int>> Match(string toMatch, IList<string> patterns)
+IEnumerable<IList<string>> GetMatches(string toMatch, IList<string> patterns)
 {
-    ILookup<char, int> patternLookup = patterns
-        .Select((p, i) => (FirstChar: p[0], Index: i))
-        .ToLookup(v => v.FirstChar, v => v.Index);
+    return Match(0, ImmutableStack<string>.Empty);
 
-    return Match(0, ImmutableStack<int>.Empty);
-
-    IEnumerable<IList<int>> Match(int matchIndex, IImmutableStack<int> patternIndexSequence)
+    // DFS to return all matches without memoisation (won't work for large inputs!)
+    IEnumerable<IList<string>> Match(int matchIndex, IImmutableStack<string> pattenSequence)
     {
         Debug.Assert(matchIndex <= toMatch.Length);
 
         return matchIndex == toMatch.Length
-            ? [ patternIndexSequence.Reverse().ToList() ]
-            : from index in patternLookup[toMatch[matchIndex]]
-              let pattern = patterns[index]
-              where toMatch.AsSpan(matchIndex).StartsWith(pattern)
-              from result in Match(matchIndex + pattern.Length, patternIndexSequence.Push(index))
-              select result;
+            ? [pattenSequence.Reverse().ToList()]
+            : patterns
+                .Where(p => toMatch.AsSpan(matchIndex).StartsWith(p))
+                .SelectMany(p => Match(matchIndex + p.Length, pattenSequence.Push(p)));
     }
 }
 
+long CountMatches(string toMatch, IList<string> patterns)
+{
+    long[] memoMatches = Enumerable
+        .Repeat(-1L, toMatch.Length) // indexes [0..Length) are not yet visited, indicated by -1
+        .Append(1L)                  // EOL means matched whole string so there are exactly 1 matches
+        .ToArray();                  // use array instead of Dictionary<int,long>
+
+    return CountMatches(0);
+
+    // DFS with memoisation of matches in the unmatched portion (since it is independent of patterns matched so far)
+    long CountMatches(int matchIndex)
+    {
+        Debug.Assert(matchIndex <= toMatch.Length);
+
+        long matches = memoMatches[matchIndex]; // already calculated matches for the remaining string length?
+        if (matches < 0)
+        {
+            matches = patterns
+                .Where(p => toMatch.AsSpan(matchIndex).StartsWith(p))
+                .Select(p => CountMatches(matchIndex + p.Length))
+                .Sum();
+
+            memoMatches[matchIndex] = matches;
+        }
+
+        return matches;
+    }
+}
