@@ -10,41 +10,44 @@ internal static class Program
         KeypadEncoder npad = new(GetKeyPositions("789", "456", "123", " 0A"));
         KeypadEncoder dpad = new(GetKeyPositions(" ^A", "<v>"));
 
-        int complexityTotal = 0;
-        int dpadLevels = 2;
-        
+        int dpadLevelsPart1 = 2;
+        int dpadLevelsPart2 = 25;
+
+        long complexityTotalPart1 = 0;
+        long complexityTotalPart2 = 0;
+
         foreach (string doorCode in doorCodes)
         {
             Console.WriteLine($"{0}: {doorCode}");
 
             IList<string> sequences = npad.EncodeOuterSequences([doorCode]);
             Console.WriteLine($"{1}: {sequences.First()} (x{sequences.Count})");
-            for (int level = 1; level <= dpadLevels; ++level)
+
+            for (int level = 1; level <= dpadLevelsPart1; ++level)
             {
                 sequences = dpad.EncodeOuterSequences(sequences); // calculate the next level sequences
                 Console.WriteLine($"{level+1}: {sequences.First()} (x{sequences.Count})");
             }
 
-            // Sanity check: invert all encodings and compare with door code
-            foreach (string sequence in sequences.Take(1))
-            {
-                string sequenceDecoded = sequence;
-                for (int level = dpadLevels; level > 0; --level)
-                {
-                    sequenceDecoded = dpad.DecodeInnerSequence(sequenceDecoded);
-                }
-                string doorCodeDecoded = npad.DecodeInnerSequence(sequenceDecoded);
-                Debug.Assert(doorCodeDecoded == doorCode);
-            }
-
             int numericCode = int.Parse(doorCode.Trim('A'));
-            int complexity = sequences.First().Length * numericCode;
-            complexityTotal += complexity;
+            long expandedLengthPart1 = sequences.First().Length;
+            long complexityPart1 = expandedLengthPart1 * numericCode;
+            Console.WriteLine($"[{expandedLengthPart1} * {numericCode} = {complexityPart1}]");
 
-            Console.WriteLine($"[{sequences.First().Length} * {numericCode} = {complexity}]\n");
+            long expandedLengthPart2 = sequences.Min(seq => dpad.GetEncodedOuterSequenceMinLength(seq, dpadLevelsPart2));
+            Console.WriteLine("...");
+            Console.WriteLine($"{dpadLevelsPart2 + 1}: Minimum expanded length: {expandedLengthPart2}");
+
+            long complexityPart2 = expandedLengthPart2 * numericCode;
+
+            Console.WriteLine($"[{expandedLengthPart2} * {numericCode} = {complexityPart2}]\n");
+
+            complexityTotalPart1 += complexityPart1;
+            complexityTotalPart2 += complexityPart2;
         }
 
-        Console.WriteLine($"Total complexity: {complexityTotal}");
+        Console.WriteLine($"Total complexity after {dpadLevelsPart1} encodings: {complexityTotalPart1}");
+        Console.WriteLine($"Total complexity after {dpadLevelsPart2} encodings: {complexityTotalPart2}");
     }
 
     private static IEnumerable<KeyPosition> GetKeyPositions(params string[] keyLines)

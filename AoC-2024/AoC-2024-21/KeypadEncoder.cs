@@ -6,6 +6,8 @@ internal class KeypadEncoder
     private IDictionary<(char FromKey, Coord dZ), char> _toInnerKey;
     private ILookup<(char FromKey, char ToKey), string> _toOuterSequence;
 
+    private Dictionary<(string Sequence, int Expansions), long> _memoizedExpansionLength = new();
+
     public KeypadEncoder(IEnumerable<KeyPosition> keyPositions)
     {
         var keyPositionsList = keyPositions.ToList();
@@ -15,13 +17,12 @@ internal class KeypadEncoder
 
     public string DecodeInnerSequence(string outerSequence, char startKey = 'A')
     {
-        Debug.Assert(outerSequence[^1] == 'A'); // key codes should always end with A
+        Debug.Assert(outerSequence[^1] == 'A'); // sequences should always end with A
         return string.Concat(outerSequence
-            .Split('A') // split out each key sequence (before pressing A to select the key)
-            .SkipLast(1) // discard empty sequence following final A
-            .Select(k => k.GetOffset())
+            .SplitSequence() // split into subsequences ending in A
+            .Select(seq => seq.ToOffset())
             .Scan(startKey, (fromKey, offset) => _toInnerKey[(fromKey, offset)]) // reconstruct the sequence of inner keys
-            .Skip(1) // skip the initial A key
+            .Skip(1) // skip the start key
         );
     }
 
@@ -29,15 +30,39 @@ internal class KeypadEncoder
     {
         return innerSequences
             .SelectMany(seq => EncodeOuterSequences(seq, startKey))
-            .WhereMinBy(seq => seq.Length) // TOOD: apply a tolerance for minimum-ish length?
+            .WhereMinBy(seq => seq.Length)
             .ToList();
     }
 
-    public IEnumerable<string> EncodeOuterSequences(string innerSequence, char startKey = 'A')
+    public long GetEncodedOuterSequenceMinLength(string innerSequence, int encodingLevels = 1)
     {
-        Debug.Assert(innerSequence[^1] == 'A'); // key codes should always end with A
-        List<string> results = Encode(innerSequence, startKey).ToList();
-        return results;
+        return encodingLevels == 0
+            ? innerSequence.Length
+            : innerSequence
+                .SplitSequence() // split into subsequences ending with A
+                .Sum(GetExpansionLength); // expand each subsequence separately for efficient memoization
+
+        long GetExpansionLength(string sequence)
+        {
+            if (!_memoizedExpansionLength.TryGetValue((sequence, encodingLevels), out long expandedLength))
+            {
+                expandedLength = EncodeOuterSequences(sequence)
+                    .Min(outerSequence =>
+                        GetEncodedOuterSequenceMinLength(outerSequence, encodingLevels - 1));
+
+                Console.WriteLine($"+{encodingLevels}: {sequence} => min length {expandedLength}");
+
+                _memoizedExpansionLength.Add((sequence, encodingLevels), expandedLength);
+            }
+
+            return expandedLength;
+        }
+    }
+
+    private IEnumerable<string> EncodeOuterSequences(string innerSequence, char startKey = 'A')
+    {
+        Debug.Assert(innerSequence[^1] == 'A'); // sequences should always end with A
+        return Encode(innerSequence, startKey).ToList();
 
         IEnumerable<string> Encode(ReadOnlySpan<char> innerSequence, char fromKey)
         {
@@ -67,7 +92,7 @@ internal class KeypadEncoder
 
         bool IsValidSequence(string outerKeySequence, char fromKey) =>
             outerKeySequence
-                .Scan(zKeys[fromKey], (z, key) => z + key.GetOffset()) // get each interim position in the sequence
+                .Scan(zKeys[fromKey], (z, key) => z + key.ToOffset()) // get each interim position in the sequence
                 .All(zAllKeys.Contains); // check each position is over a key (not a gap)
 
         return keyPositions

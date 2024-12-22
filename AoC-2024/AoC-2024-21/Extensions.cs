@@ -1,4 +1,5 @@
 ﻿using MoreLinq;
+using System.Diagnostics;
 
 internal static class Extensions
 {
@@ -35,8 +36,8 @@ internal static class Extensions
         _ => string.Empty
     };
 
-    public static Coord GetOffset(this string keySequence) => keySequence.Aggregate(new Coord(0, 0), (dz, key) => dz + GetOffset(key));
-    public static Coord GetOffset(this char key) => key switch
+    public static Coord ToOffset(this string sequence) => sequence.Aggregate(new Coord(0, 0), (dz, key) => dz + ToOffset(key));
+    public static Coord ToOffset(this char key) => key switch
     {
         '>' => (+1, 0),
         'v' => (0, +1),
@@ -45,6 +46,20 @@ internal static class Extensions
         'A' => (0, 0),
         _ => throw new ArgumentException($"Invalid key: '{key}'")
     };
+
+    public static IEnumerable<string> SplitSequence(this string sequence)
+    {
+        Debug.Assert(sequence[^1] == 'A'); // valid sequences should always end in A
+        int startIndex = 0;
+        int nextIndex = sequence.IndexOf('A');
+        while (nextIndex >= 0)
+        {
+            yield return sequence[startIndex..(nextIndex + 1)];
+            
+            startIndex = nextIndex + 1;
+            nextIndex = sequence.IndexOf('A', startIndex);
+        }
+    }
 
     public static IEnumerable<TSource> WhereMinBy<TSource, TValue>(
         this IEnumerable<TSource> source, Func<TSource, TValue> selector)
