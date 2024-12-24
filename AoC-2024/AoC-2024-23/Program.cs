@@ -24,7 +24,7 @@ Console.WriteLine($"3-cliques with T nodes: {tNodeCliques}");
 Dictionary<string, int> memoizedCliqueMax = new();
 
 Stopwatch sw = Stopwatch.StartNew();
-string[] maxClique = FindMaxClique(edges);
+string[] maxClique = FindMaxCliqueBK(edges);
 sw.Stop();
 Console.WriteLine($"Largest clique: {String.Join(',', maxClique)} (size {maxClique.Length}) [{sw.Elapsed}]");
 
@@ -53,37 +53,38 @@ IEnumerable<string[]> FindCliques3(IList<(string, string)> edges)
     }
 }
 
-string[] FindMaxClique(IList<(string, string)> edges)
+string[] FindMaxCliqueTP(IList<(string, string)> edges)
 {
     Dictionary<string, List<string>> connectedNodes = GetConnectedNodes(edges);
-
     HashSet<string> visitedCliques = new();
     List<IImmutableSet<string>> maximalCliques = new();
 
     // extend cliques from each individual node
     foreach (string node in connectedNodes.Keys)
     {
-        FindMaximalCliques(ImmutableHashSet.Create(node));
+        TimKibosh(ImmutableHashSet.Create(node));
     }
 
     IImmutableSet<string> maxClique = maximalCliques.OrderByDescending(clique => clique.Count).First();
     return maxClique.OrderBy(s => s).ToArray();
 
-    void FindMaximalCliques(IImmutableSet<string> clique)
+    // Extends a given clique recursively to find all maximal supercliques
+    // My own crappy "intuitive" algorithm
+    void TimKibosh(IImmutableSet<string> clique)
     {
-        string key = String.Join(',', clique.OrderBy(s => s));
+        string key = String.Join(',', clique.OrderBy(s => s)); // HACK: slow
         if (!visitedCliques.Add(key))
         {
-            return; // already visited this clique
+            return; // already visited this clique, don't repeat work
         }
             
-        List<string> nextNodes = clique
-            .SelectMany(cliqueNode => connectedNodes[cliqueNode]) // all nodes connected to the clique
+        List<string> extendingNodes = clique
+            .SelectMany(cliqueNode => connectedNodes[cliqueNode]) // all nodes connected to this clique
             .Where(node => !clique.Contains(node)) // that are not in the clique
-            .Where(node => connectedNodes[node].Count(clique.Contains) == clique.Count) // connected to all nodes in the clique
+            .Where(node => connectedNodes[node].Count(clique.Contains) == clique.Count) // but connected to all nodes in the clique
             .ToList();
 
-        if (!nextNodes.Any())
+        if (!extendingNodes.Any())
         {
             // cannot extend this clique further
             maximalCliques.Add(clique);
@@ -91,9 +92,47 @@ string[] FindMaxClique(IList<(string, string)> edges)
             return;
         }
 
-        foreach (var node in nextNodes)
+        foreach (var node in extendingNodes)
         {
-            FindMaximalCliques(clique.Add(node));
+            TimKibosh(clique.Add(node)); // extend the clique and recurse
+        }
+    }
+}
+
+string[] FindMaxCliqueBK(IList<(string, string)> edges)
+{
+    Dictionary<string, List<string>> connectedNodes = GetConnectedNodes(edges);
+    List<IImmutableSet<string>> maximalCliques = new();
+
+    BronKerbosch(
+        ImmutableHashSet.Create<string>(),
+        ImmutableHashSet.Create(connectedNodes.Keys.ToArray()),
+        ImmutableHashSet.Create<string>());
+
+    IImmutableSet<string> maxClique = maximalCliques.OrderByDescending(clique => clique.Count).First();
+    return maxClique.OrderBy(s => s).ToArray();
+
+    // Finds all maximal cliques recursively
+    // https://en.wikipedia.org/wiki/Bron%E2%80%93Kerbosch_algorithm
+    void BronKerbosch(IImmutableSet<string> r, IImmutableSet<string> p, IImmutableSet<string> x)
+    {
+        if (p.Count == 0 && x.Count == 0)
+        {
+            maximalCliques.Add(r);
+            Console.WriteLine($"Maximal clique: {String.Join(',', r.Order())} (size {r.Count})");
+        }
+
+        foreach (string node in p)
+        {
+            List<string> neighbourNodes = connectedNodes[node];
+            
+            BronKerbosch(
+                r.Add(node),
+                p.Intersect(neighbourNodes),
+                x.Intersect(neighbourNodes));
+
+            p = p.Remove(node);
+            x = x.Add(node);
         }
     }
 }
