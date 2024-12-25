@@ -1,0 +1,59 @@
+
+y00 XOR x00 -> z00	// add bit 0
+x00 AND y00 -> fhd	// carry from bit 0
+
+x01 XOR y01 -> hbw	// add bit 1
+hbw XOR fhd -> z01	// add bit 1 + carry from bit 0
+y01 AND x01 -> kkp	// carry overflow
+fhd AND hbw -> jjg	// carry cascade
+jjg OR kkp -> csn	// carry from bit 1
+
+y02 XOR x02 -> ddq	// add bit 2
+ddq XOR csn -> z02	// add bit 2 + carry from bit 1
+x02 AND y02 -> jns	// carry overflow
+ddq AND csn -> ssn 	// carry cascade
+ssn OR jns -> hct	// carry from bit 2
+
+...
+
+mqf OR jpw -> mmp	// carry from bit 5
+
+y06 XOR x06 -> frf	// add bit 6
+frf XOR mmp -> dhg	// add bit 6 + carry from bit 5 -> incorrect (z06)
+y06 AND x06 -> nvf	// carry overflow
+mmp AND frf -> jvk	// carry cascade
+nvf OR jvk -> z06	// carry from bit 6 -> incorrect (dhg)
+
+x07 XOR y07 -> kwn	// add bit 7
+kwn XOR dhg -> z07	// add bit 7 + carry from bit 6
+y07 AND x07 -> tcs	// carry overflow
+dhg AND kwn -> pvc	// carry cascade
+pvc OR tcs -> qwk	// carry from bit 7
+
+...
+
+bff OR sbj -> fmm	// carry from 22
+
+x23 XOR y23 -> cmb	// add bit 23
+fmm XOR cmb -> bhd	// add bit 23 + carry from 22 -> incorrect (z23)
+x23 AND y23 -> gjg	// carry overflow
+cmb AND fmm -> z23	// carry cascade -> incorrect (bhd)
+bhd OR gjg -> vcn	// carry from 23
+
+...
+
+gkv OR jbk -> ntc	// carry from 36
+
+x37 XOR y37 -> twj	// add bit 37
+ntc XOR twj -> z37	// add bit 37 + carry from 36
+y37 AND x37 -> nhv	// carry overflow
+twj AND ntc -> pjh	// carry cascade
+nhv OR pjh -> nfb	// carry from 37
+
+y38 XOR x38 -> dfg	// add 38
+nfb XOR dfg -> nbf	// add 38 + carry from w7 -> incorrect (z38)
+x38 AND y38 -> z38	// carry overflow -> incorrect
+nfb AND dfg -> cdj	// carry cascade
+cdj OR nbf -> hvf	// carry from 37
+
+...
