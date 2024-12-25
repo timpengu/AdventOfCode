@@ -74,19 +74,19 @@ internal static class Program
 
             if (swaps.Count() < maxSwaps)
             {
-                int circuitDepth = 5;
-                HashSet<string> depSignals = new();
-                depSignals.UnionWith(circuit.GetDependents(Circuit.GetSignal('x', bit), circuitDepth));
-                depSignals.UnionWith(circuit.GetDependents(Circuit.GetSignal('y', bit), circuitDepth));
-                depSignals.UnionWith(circuit.GetDependencies(Circuit.GetSignal('z', bit), circuitDepth));
-                depSignals.UnionWith(circuit.GetDependents(Circuit.GetSignal('x', bit + 1), circuitDepth));
-                depSignals.UnionWith(circuit.GetDependents(Circuit.GetSignal('y', bit + 1), circuitDepth));
-                depSignals.UnionWith(circuit.GetDependencies(Circuit.GetSignal('z', bit + 1), circuitDepth));
-                depSignals.ExceptWith(swaps.Select(s => s.Item1));
-                depSignals.ExceptWith(swaps.Select(s => s.Item2));
-                Console.WriteLine($"[{bit}] Testing swaps with {String.Join(',', depSignals.Order())}...");
+                string prevOutput = Circuit.GetSignal('z', bit - 1);
+                string[] depOutputs = MoreEnumerable.Sequence(bit, bit + 2) // include this bit and next two bits allowing for carry & cross-wiring
+                    .Select(i => Circuit.GetSignal('z', i))
+                    .ToArray();
 
-                foreach (var subset in depSignals.Subsets(2))
+                ISet<string> deps = circuit.GetDependencies(depOutputs);
+                deps.ExceptWith(circuit.GetDependencies(prevOutput));
+                deps.ExceptWith(swaps.Select(s => s.Item1));
+                deps.ExceptWith(swaps.Select(s => s.Item2));
+
+                Console.WriteLine($"[{bit}] Testing swaps with {String.Join(',', deps.Order())}");
+
+                foreach (var subset in deps.Subsets(2))
                 {
                     var swap = (subset[0], subset[1]);
                     var newSwaps = swaps.Append(swap);

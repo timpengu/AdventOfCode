@@ -49,44 +49,23 @@ class Circuit
         }
     }
 
-    public IEnumerable<string> GetDependencies(string signal, int depth)
+    public ISet<string> GetDependencies(params string[] outputSignals)
     {
         Dictionary<string, Gate> outputGates = _gates.ToDictionary(g => g.Output);
         HashSet<string> deps = new();
-        GetDependencies(signal, depth);
-        return deps;
+        Queue<string> queue = new(outputSignals);
 
-        void GetDependencies(string signal, int depth)
+        while (queue.TryDequeue(out string? signal))
         {
-            if (depth > 0 && outputGates.ContainsKey(signal))
+            if (outputGates.ContainsKey(signal) && deps.Add(signal))
             {
-                deps.Add(signal);
-
                 Gate gate = outputGates[signal];
-                GetDependencies(gate.Input1, depth - 1);
-                GetDependencies(gate.Input2, depth - 1);
+                queue.Enqueue(gate.Input1);
+                queue.Enqueue(gate.Input2);
             }
         }
-    }
 
-    public IEnumerable<string> GetDependents(string signal, int depth)
-    {
-        HashSet<string> deps = new();
-        GetDependents(signal, depth);
         return deps;
-
-        void GetDependents(string signal, int depth)
-        {
-            if (depth == 0)
-                return;
-
-            IEnumerable<Gate> gates = _signalGates[signal];
-            foreach (Gate gate in gates)
-            {
-                deps.Add(gate.Output);
-                GetDependents(gate.Output, depth - 1);
-            }
-        }
     }
 
     public void PropagateSignals()
