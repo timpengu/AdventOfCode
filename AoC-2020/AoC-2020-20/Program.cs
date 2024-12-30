@@ -5,7 +5,7 @@ using System.Text.RegularExpressions;
 
 List<Tile> tiles = new();
 
-using (StreamReader file = new("input.txt"))
+using (StreamReader file = new("inputSample.txt"))
 {
     while (!file.EndOfStream)
     {
@@ -49,7 +49,7 @@ using (StreamReader file = new("input.txt"))
 }
 
 // ensure all tiles are the same size
-Debug.Assert(tiles.Select(t => (t.XSize, t.YSize)).Distinct().Count() == 1);
+Debug.Assert(tiles.Select(t => t.Size).Distinct().Count() == 1);
 
 ILookup<Edge, Tile> tilesByEdge = tiles
     .SelectMany(
@@ -57,14 +57,14 @@ ILookup<Edge, Tile> tilesByEdge = tiles
         (tile, edge) => (Edge:edge, Tile:tile))
     .ToLookup(t => t.Edge, t => t.Tile);
 
-List<int> cornerIds = new();
-foreach(var tile in tiles.OrderBy(t => t.Id))
+HashSet<Tile> cornerTiles = new();
+foreach(Tile tile in tiles.OrderBy(t => t.Id))
 {
     Console.WriteLine($"\nTile {tile.Id}:");
 
     var edges = tile
         .GetEdgesClockwise()
-        .Zip(['N', 'E', 'S', 'W']) // edge facing directions
+        .Zip(['U', 'R', 'D', 'L']) // edge facing directions
         .Select(edge => (
             Edge: edge.First,
             Facing: edge.Second,
@@ -81,52 +81,35 @@ foreach(var tile in tiles.OrderBy(t => t.Id))
     if (neighbours == 2)
     {
         Console.WriteLine("Corner!");
-        cornerIds.Add(tile.Id);
+        cornerTiles.Add(tile);
     }
 }
 
-long cornerIdProduct = cornerIds.Aggregate(1L, (product, id) => product * id);
-Console.WriteLine($"\nFound {cornerIds.Count} corners with Id product: {cornerIdProduct}");
+long cornerIdProduct = cornerTiles.Aggregate(1L, (product, tile) => product * tile.Id);
+Console.WriteLine($"\nFound {cornerTiles.Count} corners with Id product: {cornerIdProduct}");
 
-
-record struct Edge: IEquatable<Edge>
+List<Layout> layouts = new LayoutEngine(tiles).GenerateLayouts().ToList();
+for (int i = 0; i < layouts.Count; ++i)
 {
-    public readonly bool[] Pattern;
+    var layout = layouts[i];
 
-    public Edge(IEnumerable<bool> pattern)
+    Console.WriteLine($"\nLayout {i + 1}:");
+    for (int y = 0; y < layout.TileCount.Y; ++y)
     {
-        Pattern = pattern.ToArray();
+        for (int x = 0; x < layout.TileCount.X; ++x)
+        {
+            var tile = layout.GetTile((x, y));
+            Console.Write($"{tile,8}");
+        }
+        Console.WriteLine();
     }
-
-    public Edge Flip() => new Edge(Pattern.Reverse());
-
-    public bool Equals(Edge other) =>
-        Pattern.SequenceEqual(other.Pattern);
-
-    public override int GetHashCode() =>
-        Pattern.Aggregate(1, (hash, bit) =>
-            unchecked((hash << 1) + (bit ? 1 : 0)) % int.MaxValue);
-
-    public override string ToString() => String.Concat(Pattern.Select(c => c ? '#' : '.'));
-}
-
-record Tile(int Id, bool[,] Image)
-{
-    public IEnumerable<Edge> GetEdges() => GetEdgesClockwise().Concat(GetEdgesAntiClockwise());
-    public IEnumerable<Edge> GetEdgesAntiClockwise() => GetEdgesClockwise().Reverse().Select(e => e.Flip());
-    public IEnumerable<Edge> GetEdgesClockwise()
+    for (int y = 0; y < layout.Size.Y; ++y)
     {
-        yield return new Edge(Scan(MoreEnumerable.Sequence(0, XMax), 0));
-        yield return new Edge(Scan(XMax, MoreEnumerable.Sequence(0, YMax)));
-        yield return new Edge(Scan(MoreEnumerable.Sequence(XMax, 0), YMax));
-        yield return new Edge(Scan(0, MoreEnumerable.Sequence(YMax, 0)));
+        for (int x = 0; x < layout.Size.X; ++x)
+        {
+            bool value = layout[(x, y)];
+            Console.Write(value ? '#' : '.');
+        }
+        Console.WriteLine();
     }
-
-    private IEnumerable<bool> Scan(int x, IEnumerable<int> ys) => ys.Select(y => Image[x, y]);
-    private IEnumerable<bool> Scan(IEnumerable<int> xs, int y) => xs.Select(x => Image[x, y]);
-
-    public int XMax => XSize - 1;
-    public int YMax => YSize - 1;
-    public int XSize => Image.GetLength(0);
-    public int YSize => Image.GetLength(1);
 }
