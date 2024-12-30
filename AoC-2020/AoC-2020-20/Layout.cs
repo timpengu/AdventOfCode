@@ -28,6 +28,13 @@ class Layout : IImage
     public Coord TileCount => (_tiles.GetLength(0), _tiles.GetLength(1));
     public OrientedTile GetTile(Coord zTile) => _tiles[zTile.X, zTile.Y];
 
+    public IEnumerable<int> TileRangeX() => Enumerable.Range(0, TileCount.X);
+    public IEnumerable<int> TileRangeY() => Enumerable.Range(0, TileCount.Y);
+    public IEnumerable<Coord> TileRange() =>
+        from y in TileRangeY()
+        from x in TileRangeX()
+        select new Coord(x, y);
+
     public Coord Size => TileCount * _imageSize;
     public bool this[Coord z]
     {

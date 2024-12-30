@@ -38,21 +38,15 @@ class LayoutEngine
     private static OrientedTile? GetConnectedTile(ILookup<Edge, OrientedTile> connectedTiles, OrientedTile tile, Edge edge) =>
         connectedTiles[edge].SingleOrDefault(connectedTile => connectedTile.Tile != tile.Tile);
 
+    public IEnumerable<Tile> GetCornerTiles() => GetTopLeftTiles().Select(t => t.Tile).Distinct();
+
     public IEnumerable<Layout> GenerateLayouts()
     {
-        List<OrientedTile> topLeftTiles = _orientedTiles
-            .Where(tile => GetConnectedTileRight(tile) != null)
-            .Where(tile => GetConnectedTileDown(tile) != null)
-            .Where(tile => GetConnectedTileLeft(tile) == null)
-            .Where(tile => GetConnectedTileUp(tile) == null)
-            .ToList();
-
-        Debug.Assert(topLeftTiles.Count == 8); // should have 4 corner tiles x 2 orientations
-
-        foreach (var topLeftTile in topLeftTiles)
+        foreach (var topLeftTile in GetTopLeftTiles())
         {
             List<List<OrientedTile>> tileLayout = new();
             List<OrientedTile>? prevRow = null;
+
             for (OrientedTile? tile = topLeftTile; tile != null;)
             {
                 List<OrientedTile> tileRow = new();
@@ -78,4 +72,11 @@ class LayoutEngine
             yield return new Layout(tileLayout);
         }
     }
+
+    private IEnumerable<OrientedTile> GetTopLeftTiles() =>
+        _orientedTiles
+            .Where(tile => GetConnectedTileRight(tile) != null)
+            .Where(tile => GetConnectedTileDown(tile) != null)
+            .Where(tile => GetConnectedTileLeft(tile) == null)
+            .Where(tile => GetConnectedTileUp(tile) == null);
 }
