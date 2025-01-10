@@ -1,68 +1,46 @@
 ﻿
-List<int> memory =
+List<int> program =
     File.ReadLines("input.txt")
     .Single()
     .Split(',', StringSplitOptions.RemoveEmptyEntries)
     .Select(int.Parse)
     .ToList();
 
-// part 1
-memory[1] = 12;
-memory[2] = 02;
+Part1();
 
-int ip = 0;
+int output = 19690720;
+Console.WriteLine($"\nSearching for: {output}");
+int input = Part2(output).ToList().Single();
+Console.WriteLine($"Successful input: {input}");
 
-Dictionary<int, Action> ops = new()
+void Part1()
 {
-    [1] = Add,
-    [2] = Multiply,
-    [99] = Halt,
-};
-
-bool halt = false;
-while (!halt)
-{
-    Console.WriteLine($"[{ip}] {String.Join(',', memory)}");
-
-    int opcode = Fetch();
-    Action op = DecodeInstruction(opcode);
-    op();
+    var computer = new Computer(program, verbose: true);
+    computer[1] = 12;
+    computer[2] = 02;
+    computer.Execute();
+    Console.WriteLine($"\nHalted with [0] = {computer[0]}");
 }
 
-Console.WriteLine($"\nHalted with [0] = {Get(0)}");
-
-int Fetch() => Get(ip++);
-Action DecodeInstruction(int opcode) =>
-    ops.TryGetValue(opcode, out Action op)
-        ? op
-        : throw new NotSupportedException($"Unknown opcode {opcode}");
-
-void Add()
+IEnumerable<int> Part2(int searchOutput)
 {
-    ExecBinaryOp(
-        Fetch(), Fetch(), Fetch(),
-        (a, b) => a + b);
-}
+    for (int noun = 0; noun <= 99; ++noun)
+    {
+        for (int verb = 0; verb <= 99; ++verb)
+        {
+            var computer = new Computer(program);
+            computer[1] = noun;
+            computer[2] = verb;
+            computer.Execute();
 
-void Multiply()
-{
-    ExecBinaryOp(
-        Fetch(), Fetch(), Fetch(),
-        (a, b) => a * b);
-}
+            int input = 100 * noun + verb;
+            int output = computer[0];
+            Console.WriteLine($"{input:0000} => {output}");
 
-void Halt()
-{
-    halt = true;
+            if (output == searchOutput)
+            {
+                yield return input;
+            }
+        }
+    }
 }
-
-void ExecBinaryOp(int parameter1, int parameter2, int parameter3, Func<int,int,int> operation)
-{
-    int operand1 = Get(parameter1);
-    int operand2 = Get(parameter2);
-    int result = operation(operand1, operand2);
-    Set(parameter3, result);
-}
-
-int Get(int address) => memory[address];
-void Set(int address, int value) => memory[address] = value;
