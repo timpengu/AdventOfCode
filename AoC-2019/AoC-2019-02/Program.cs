@@ -1,4 +1,5 @@
-﻿
+﻿using IntCode;
+
 List<int> program =
     File.ReadLines("input.txt")
     .Single()
@@ -15,10 +16,10 @@ Console.WriteLine($"Successful input: {input}");
 
 void Part1()
 {
-    var computer = new Computer(program, verbose: true);
+    var computer = new Computer<int>(program);
     computer[1] = 12;
     computer[2] = 02;
-    computer.Execute();
+    computer.ExecuteAll();
     Console.WriteLine($"\nHalted with [0] = {computer[0]}");
 }
 
@@ -28,10 +29,10 @@ IEnumerable<int> Part2(int searchOutput)
     {
         for (int verb = 0; verb <= 99; ++verb)
         {
-            var computer = new Computer(program);
+            var computer = new Computer<int>(program);
             computer[1] = noun;
             computer[2] = verb;
-            computer.Execute();
+            computer.ExecuteAll();
 
             int input = 100 * noun + verb;
             int output = computer[0];

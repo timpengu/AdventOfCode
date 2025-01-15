@@ -1,4 +1,5 @@
 ﻿using MoreLinq;
+using IntCode;
 
 internal static class Program
 {
@@ -35,7 +36,7 @@ internal static class Program
             int[] inputs = [phase, signal];
             Console.WriteLine($"Input:  [{string.Join(',', inputs)}]");
 
-            var computer = new Computer(program, inputs);
+            var computer = new Computer<int>(program, inputs);
             signal = computer.ExecuteOutputs().First();
             Console.WriteLine($"Output: {signal}");
         }
@@ -47,12 +48,12 @@ internal static class Program
     {
         Console.WriteLine($"\nPhase sequence: {string.Join(',', phases)}");
 
-        List<(char Id, Computer Computer, InputQueue InputQueue)> amps = new(
+        List<(char Id, Computer<int> Computer, InputQueue<int> InputQueue)> amps = new(
             phases.Select((phase, index) =>
             {
                 char id = (char)('A' + index);
-                var inputQueue = new InputQueue([phase]);
-                var computer = new Computer(program, inputQueue);
+                var inputQueue = new InputQueue<int>([phase]);
+                var computer = new Computer<int>(program, inputQueue);
                 return (id, computer, inputQueue);
             })
         );

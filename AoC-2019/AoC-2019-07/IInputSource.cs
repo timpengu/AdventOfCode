@@ -1,4 +1,0 @@
-﻿interface IInputSource
-{
-    int ReadInput();
-}
