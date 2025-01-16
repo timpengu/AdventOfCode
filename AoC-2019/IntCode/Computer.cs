@@ -31,6 +31,7 @@ public class Computer<T>
         public ParameterMode ParameterMode3 => (ParameterMode)(InstructionCode / 10000 % 10);
     }
 
+    public Computer(IEnumerable<T> memory, Func<T> inputSource) : this(memory, new InputSource<T>(inputSource)) { }
     public Computer(IEnumerable<T> memory, params T[] inputs) : this(memory, inputs.ToInputSequence()) {}
     public Computer(IEnumerable<T> memory, IInputSource<T> inputSource)
     {
