@@ -1,5 +1,6 @@
 ﻿using System.Diagnostics;
 using System.Numerics;
+using System.Runtime.CompilerServices;
 
 namespace IntCode;
 
@@ -32,7 +33,9 @@ public class Computer<T>
     }
 
     public Computer(IEnumerable<T> memory, Func<T> inputSource) : this(memory, new InputSource<T>(inputSource)) { }
-    public Computer(IEnumerable<T> memory, params T[] inputs) : this(memory, inputs.ToInputSequence()) {}
+    public Computer(IEnumerable<T> memory, params IEnumerable<T> inputs) : this(memory, inputs.ToInputSequence()) {}
+
+    [OverloadResolutionPriority(1)]
     public Computer(IEnumerable<T> memory, IInputSource<T> inputSource)
     {
         _ops = new()
