@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "AoC-2019-17": {
+      "commandName": "Project",
+      "commandLineArgs": "< \"$(ProjectDir)consoleInput.txt\""
+    }
+  }
+}
