@@ -20,16 +20,24 @@ foreach (var range in ranges)
     List<long> invalid1 = range.Enumerate().Where(IsInvalid1).ToList();
     List<long> invalid2 = range.Enumerate().Where(IsInvalid2).ToList();
 
-    Console.WriteLine($"{range.First}-{range.Last} ({String.Join(',', invalid1)}) ({String.Join(',', invalid2)})");
-
     sum1 += invalid1.Sum();
     sum2 += invalid2.Sum();
+
+    Console.WriteLine($"{range.First}-{range.Last} ({String.Join(',', invalid1)}) ({String.Join(',', invalid2)})");
 }
 
 Console.WriteLine($"\n{sum1}\n{sum2}");
 
-static bool IsInvalid1(long value) => Regex.IsMatch(value.ToString(), @"^(\d+)\1{1}$", RegexOptions.Compiled);
-static bool IsInvalid2(long value) => Regex.IsMatch(value.ToString(), @"^(\d+)\1{1,}$", RegexOptions.Compiled);
+static bool IsInvalid1(long value) => Regex.IsMatch(value.ToString(), @"^(\d+)\1$", RegexOptions.Compiled);
+static bool IsInvalid2(long value) => Regex.IsMatch(value.ToString(), @"^(\d+)\1+$", RegexOptions.Compiled);
+
+static bool IsInvalid3(long value)
+{
+    string s = value.ToString();
+    return Enumerable.Range(1, s.Length / 2)
+        .Where(l => s.Length % l == 0)
+        .Any(l => s.Chunk(l).Select(c => new String(c)).Distinct().Skip(1).Any() == false);
+}
 
 static class Extensions
 {
