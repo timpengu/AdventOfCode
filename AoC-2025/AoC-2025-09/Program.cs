@@ -9,22 +9,21 @@ List<Coord> coords = File.ReadLines("input.txt")
 var perimeter = GetPerimeter(coords).MergeColinear().ToList();
 Console.WriteLine($"\nPerimeter: {String.Join(",", perimeter)}\n");
 
-var coordPairsDescByArea =
+var rectsByAreaDesc =
     from z1 in coords
     from z2 in coords
+    let rect = Rect.Create(z1, z2)
     let area = Area(z1, z2)
     orderby area descending
-    select (Z1:z1, Z2:z2, Area:area);
+    select (Rect:rect, Area:area);
 
-var big1 = coordPairsDescByArea.First();
-Console.WriteLine($"Part 1: {big1.Z1} {big1.Z2} => {big1.Area}\n");
+var big1 = rectsByAreaDesc.First();
+Console.WriteLine($"Part 1: {big1.Rect} => {big1.Area}\n");
 
-var big2 = coordPairsDescByArea.First(s =>
-    GetRectangleEdges(s.Z1, s.Z2).All(r =>
-        perimeter.All(p =>
-            !p.IsIntersectedBy(r.Edge, r.OutwardNormal)))
+var big2 = rectsByAreaDesc.First(s =>
+    perimeter.All(p => !p.Intersects(s.Rect))
 );
-Console.WriteLine($"Part 2: {big2.Z1} {big2.Z2} => {big2.Area}\n");
+Console.WriteLine($"Part 2: {big2.Rect} => {big2.Area}\n");
 
 static long Area(Coord z1, Coord z2) => ((long)Math.Abs(z1.X - z2.X) + 1) * ((long)Math.Abs(z1.Y - z2.Y) + 1);
 
@@ -32,24 +31,6 @@ static IEnumerable<Edge> GetPerimeter(IReadOnlyCollection<Coord> coords) =>
     coords
         .Append(coords.First())
         .Pairwise((a, b) => new Edge(a, b));
-
-static IEnumerable<(Edge Edge, Coord OutwardNormal)> GetRectangleEdges(Coord a, Coord b)
-{
-    int[] xs = a.X < b.X ? [a.X, b.X] : [b.X, a.X];
-    int[] ys = a.Y < b.Y ? [a.Y, b.Y] : [b.Y, a.Y];
-
-    Coord z00 = (xs[0], ys[0]);
-    Coord z01 = (xs[0], ys[1]);
-    Coord z11 = (xs[1], ys[1]);
-    Coord z10 = (xs[1], ys[0]);
-
-    return [
-        (new (z00, z01), (-1,0)),
-        (new (z01, z11), (0,+1)),
-        (new (z11, z10), (+1,0)),
-        (new (z10, z00), (0,-1))
-    ];
-}
 
 record struct Coord(int X, int Y)
 {
@@ -63,8 +44,6 @@ record struct Coord(int X, int Y)
 
 record struct Edge(Coord Start, Coord End)
 {
-    public static Edge operator +(Edge l, Coord z) => new(l.Start + z, l.End + z);
-
     public bool IsVertical => Start.X == End.X;
     public bool IsHorizontal => Start.Y == End.Y;
     
@@ -76,26 +55,34 @@ record struct Edge(Coord Start, Coord End)
     public override string ToString() => $"{Start}-{End}";
 }
 
+record struct Rect(Coord Min, Coord Max)
+{
+    public static Rect Create(Coord a, Coord b) => new Rect
+    (
+        (Math.Min(a.X, b.X), Math.Min(a.Y, b.Y)),
+        (Math.Max(a.X, b.X), Math.Max(a.Y, b.Y))
+    );
+
+    public override string ToString() => $"{Min}-{Max}";
+}
+
 internal static class Extensions
 {
-    public static bool IsIntersectedBy(this Edge perim, Edge edge, Coord edgeOutwardNormal)
+    public static bool Intersects(this Edge perim, Rect r)
     {
-        perim += edgeOutwardNormal; // HACK: secret sauce :)
-
-        if (edge.MaxX < perim.MinX || edge.MinX > perim.MaxX || edge.MaxY < perim.MinY || edge.MinY > perim.MaxY)
+        if (r.Max.X < perim.MinX || r.Min.X > perim.MaxX || r.Max.Y < perim.MinY || r.Min.Y > perim.MaxY)
         {
             return false;
         }
-        if (edge.IsHorizontal && perim.IsVertical)
+        if (perim.IsHorizontal)
         {
-            return edge.MinX < perim.Start.X && edge.MaxX > perim.Start.X;
+            return r.Min.Y < perim.Start.Y && r.Max.Y > perim.Start.Y;
         }
-        if (edge.IsVertical && perim.IsHorizontal)
+        if (perim.IsVertical)
         {
-            return edge.MinY < perim.Start.Y && edge.MaxY > perim.Start.Y;
+            return r.Min.X < perim.Start.X && r.Max.X > perim.Start.X;
         }
-
-        return false;
+        throw new ArgumentException(nameof(perim));
     }
 
     // Merge consecutive colinear edges to avoid nasty edge cases (not actually needed for the given input)
