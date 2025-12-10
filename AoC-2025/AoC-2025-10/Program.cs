@@ -2,27 +2,33 @@
 
 List<Machine> machines = File.ReadLines("example.txt").Select(Machine.Parse).ToList();
 
+var maxIndicators = machines.MaxBy(m => m.Indicators.Count());
+var maxButtons = machines.MaxBy(m => m.Buttons.Count());
+
+Console.WriteLine($"Max indicators: [{maxIndicators.Indicators.Length}] {maxIndicators}");
+Console.WriteLine($"Max buttons: [{maxButtons.Buttons.Count}] {maxButtons}");
+
 int indicatorTotal = 0;
 int joltageTotal = 0;
 
-foreach (var machine in machines)
+for (int m = 0; m < machines.Count; m++)
 {
-    Console.WriteLine($"{machine}:");
+    var machine = machines[m];
+    Console.WriteLine($"\n{m+1}/{machines.Count}: {machine}");
 
     List<int> indicatorSeq = FindIndicatorSequences(machine).First();
     indicatorTotal += indicatorSeq.Count;
-
     Console.WriteLine($"Indicator sequence: {String.Join(",", indicatorSeq)}");
 
+    Stopwatch sw = Stopwatch.StartNew();
     List<int> joltageSeq = FindJoltageSequences(machine).First();
     joltageTotal += joltageSeq.Count;
-
-    Console.WriteLine($"Joltage sequence: {String.Join(",", joltageSeq)}");
+    Console.WriteLine($"Joltage sequence: {String.Join(",", joltageSeq)} [{sw.Elapsed}]");
 }
 
 Console.WriteLine();
 Console.WriteLine($"Indicator total: {indicatorTotal}");
-Console.WriteLine($"Joltage total: {indicatorTotal}");
+Console.WriteLine($"Joltage total: {joltageTotal}");
 
 IEnumerable<List<int>> FindIndicatorSequences(Machine machine)
 {
@@ -65,7 +71,15 @@ IEnumerable<List<int>> FindIndicatorSequences(Machine machine)
 IEnumerable<List<int>> FindJoltageSequences(Machine machine)
 {
     int[] targetJoltages = machine.Joltages;
-    List<bool[]> buttons = machine.Buttons.Select(b => b.Aggregate(new bool[targetJoltages.Length], (a, v) => { a[v] = true; return a; })).ToList();
+
+    List<(int Index, bool[] Buttons)> buttons = machine.Buttons
+        .Select((b,i) => (Buttons:b,Index:i))
+        .OrderByDescending(b => b.Buttons.Length)
+        .Select(b => (
+            b.Index,
+            Buttons: b.Buttons.Aggregate(new bool[targetJoltages.Length], (a, v) => { a[v] = true; return a; })
+        ))
+        .ToList();
 
     var initialState = (
         Joltages: Enumerable.Repeat(0, targetJoltages.Length).ToArray(),
@@ -87,7 +101,7 @@ IEnumerable<List<int>> FindJoltageSequences(Machine machine)
             for (int i = 0; i < buttons.Count; i++)
             {
                 var nextState = (
-                    Joltages: state.Joltages.Zip(buttons[i], (j, b) => b ? j + 1 : j).ToArray(),
+                    Joltages: state.Joltages.Zip(buttons[i].Buttons, (j, b) => b ? j + 1 : j).ToArray(),
                     Sequence: state.Sequence.Append(i)
                 );
                 queue.Enqueue(nextState);
