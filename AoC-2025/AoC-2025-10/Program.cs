@@ -1,6 +1,8 @@
-﻿using System.Diagnostics;
+using MoreLinq;
+using System.Diagnostics;
+using System.Linq;
 
-List<Machine> machines = File.ReadLines("example.txt").Select(Machine.Parse).ToList();
+List<Machine> machines = File.ReadLines("input.txt").Select(Machine.Parse).ToList();
 
 var maxIndicators = machines.MaxBy(m => m.Indicators.Count());
 var maxButtons = machines.MaxBy(m => m.Buttons.Count());
@@ -20,15 +22,31 @@ for (int m = 0; m < machines.Count; m++)
     indicatorTotal += indicatorSeq.Count;
     Console.WriteLine($"Indicator sequence: {String.Join(",", indicatorSeq)}");
 
-    Stopwatch sw = Stopwatch.StartNew();
-    List<int> joltageSeq = FindJoltageSequences(machine).First();
-    joltageTotal += joltageSeq.Count;
-    Console.WriteLine($"Joltage sequence: {String.Join(",", joltageSeq)} [{sw.Elapsed}]");
+    // Stopwatch sw = Stopwatch.StartNew();
+    // List<int> joltagePushes = FindJoltageSequences2(machine).First();
+    // joltageTotal += joltagePushes.Sum();
+    // Console.WriteLine($"Joltage pushes ({joltagePushes.Sum()}): {String.Join(",", joltagePushes)} [{sw.Elapsed}]");
 }
 
-Console.WriteLine();
-Console.WriteLine($"Indicator total: {indicatorTotal}");
-Console.WriteLine($"Joltage total: {joltageTotal}");
+Console.WriteLine($"\nIndicator total: {indicatorTotal}");
+
+Stopwatch sw = Stopwatch.StartNew();
+int count = 0;
+joltageTotal = machines
+    .AsParallel()
+    .Select((machine,i) =>
+    {
+        List<int> pushes = FindJoltageSequences2(machine).First();
+        lock(sw)
+        {
+            Console.WriteLine($"\n{++count}/{machines.Count} [{i + 1}]: {machine}");
+            Console.WriteLine($"Pushes ({pushes.Sum()}): {String.Join(",", pushes)} [{sw.Elapsed}]");
+        }
+        return pushes.Sum();
+    })
+    .Sum();
+
+Console.WriteLine($"\nJoltage total: {joltageTotal}");
 
 IEnumerable<List<int>> FindIndicatorSequences(Machine machine)
 {
@@ -62,6 +80,47 @@ IEnumerable<List<int>> FindIndicatorSequences(Machine machine)
                         Sequence: state.Sequence.Append(i)
                     );
                     queue.Enqueue(nextState);
+                }
+            }
+        }
+    }
+}
+
+IEnumerable<List<int>> FindJoltageSequences2(Machine machine)
+{
+    machine.Buttons.Sort((a, b) => b.Length.CompareTo(a.Length));
+
+    List<int[]> buttons = machine.Buttons
+        .Select(b => Enumerable.Range(0, machine.Joltages.Length).Select(i => b.Contains(i) ? 1 : 0).ToArray())
+        .ToList();
+
+    return Solve(machine.Joltages, [], 0);
+
+    IEnumerable<List<int>> Solve(int[] joltages, IEnumerable<int> buttonPushes, int buttonIndex)
+    {
+        if (buttonIndex == buttons.Count)
+        {
+            if (joltages.All(j => j == 0))
+            {
+                yield return buttonPushes.ToList();
+            }
+        }
+        else
+        {
+            int[] button = buttons[buttonIndex];
+            int maxPushes = Enumerable.Range(0, joltages.Length)
+                .Where(i => button[i] > 0)
+                .Select(i => joltages[i] * button[i])
+                .Min();
+
+            int minPushes = buttonIndex == buttons.Count - 1 ? maxPushes : 0;
+            for (int pushes = maxPushes; pushes >= minPushes; --pushes)
+            {
+                int[] nextJoltages = joltages.Zip(button, (j, b) => j - pushes * b).ToArray();
+                var solutions = Solve(nextJoltages, buttonPushes.Append(pushes), buttonIndex + 1);
+                foreach (var solution in solutions)
+                {
+                    yield return solution;
                 }
             }
         }
