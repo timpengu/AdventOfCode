@@ -36,10 +36,17 @@ foreach (var kvp in joltageSolutions)
     Console.WriteLine($"Loaded: {kvp.Key} => {String.Join(",", kvp.Value)}");
 }
 
+Dictionary<Machine, int> matches = machines
+    .Select(m => (Machine: m, Matches: joltageSolutions.Keys.Count(k => IsMatch(m, k))))
+    .Where(m => m.Matches > 0)
+    .ToDictionary();
+
+Debug.Assert(matches.All(m => m.Value == 1));
+
 Stopwatch sw = Stopwatch.StartNew();
 int count = joltageSolutions.Count;
 int joltageSum = machines
-    .Where(machine => !joltageSolutions.ContainsKey(machine))
+    .Where(m => !matches.ContainsKey(m))
     .AsParallel()
     .Select((machine, i) =>
     {
@@ -175,7 +182,15 @@ IEnumerable<List<int>> FindJoltageButtonCounts(Machine machine)
     }
 }
 
-IDictionary<Machine, List<int>> LoadFile(string path)
+static bool IsMatch(Machine a, Machine b)
+{
+    return
+        a.Joltages.SequenceEqual(b.Joltages) &&
+        a.Indicators.SequenceEqual(b.Indicators) &&
+        a.Buttons.Count == b.Buttons.Count;
+}
+
+static IDictionary<Machine, List<int>> LoadFile(string path)
 {
     if (!File.Exists(path))
     {
@@ -197,7 +212,7 @@ IDictionary<Machine, List<int>> LoadFile(string path)
     }
 }
 
-void SaveFile(IDictionary<Machine, List<int>> solutions, string path)
+static void SaveFile(IDictionary<Machine, List<int>> solutions, string path)
 {
     using (var sw = new StreamWriter(path))
     {
@@ -208,7 +223,7 @@ void SaveFile(IDictionary<Machine, List<int>> solutions, string path)
     }
 }
 
-void AppendFile(Machine machine, List<int> solution, string path)
+static void AppendFile(Machine machine, List<int> solution, string path)
 {
     using (var sw = new StreamWriter(path,true))
     {
@@ -216,7 +231,7 @@ void AppendFile(Machine machine, List<int> solution, string path)
     }
 }
 
-void Write(StreamWriter sw, Machine machine, List<int> solution)
+static void Write(StreamWriter sw, Machine machine, List<int> solution)
 {
     sw.WriteLine($"{machine} | {String.Join(',', solution)}");
 }
