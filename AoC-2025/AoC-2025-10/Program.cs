@@ -1,8 +1,11 @@
 using MoreLinq;
+using System.Collections.Immutable;
 using System.Diagnostics;
 
-const string InputFile = "example.txt";
+const string InputFile = "input.txt";
 const string CacheFile = $"solutions.{InputFile}";
+
+bool isEasy = false;
 
 List<Machine> machines = File.ReadLines(InputFile)
     .Where(s => !s.Trim().StartsWith("//"))
@@ -21,50 +24,56 @@ for (int m = 0; m < machines.Count; m++)
     indicatorTotal += indicatorSeq.Count;
     Console.WriteLine($"Indicator sequence: {String.Join(",", indicatorSeq)}");
 
-    // Stopwatch sw = Stopwatch.StartNew();
-    // List<int> joltagePushes = FindJoltageButtonCounts(machine).First();
-    // joltageTotal += joltagePushes.Sum();
-    // Console.WriteLine($"Joltage sequence ({joltagePushes.Sum()}): {String.Join(",", joltagePushes)} [{sw.Elapsed}]");
+    if (isEasy)
+    {
+        Stopwatch sw = Stopwatch.StartNew();
+        List<int> joltagePushes = FindJoltageButtonCounts2(machine).First();
+        joltageTotal += joltagePushes.Sum();
+        Console.WriteLine($"Joltage sequence ({joltagePushes.Sum()}): {String.Join(",", joltagePushes)} [{sw.Elapsed}]");
+    }
 }
 
 Console.WriteLine($"\nIndicator total: {indicatorTotal}");
 Console.WriteLine();
 
-var joltageSolutions = LoadFile(CacheFile);
-foreach (var kvp in joltageSolutions)
+if (!isEasy)
 {
-    Console.WriteLine($"Loaded: {kvp.Key} => {String.Join(",", kvp.Value)}");
-}
-
-Dictionary<Machine, int> matches = machines
-    .Select(m => (Machine: m, Matches: joltageSolutions.Keys.Count(k => IsMatch(m, k))))
-    .Where(m => m.Matches > 0)
-    .ToDictionary();
-
-Debug.Assert(matches.All(m => m.Value == 1));
-
-Stopwatch sw = Stopwatch.StartNew();
-int count = joltageSolutions.Count;
-int joltageSum = machines
-    .Where(m => !matches.ContainsKey(m))
-    .AsParallel()
-    .Select((machine, i) =>
+    var joltageSolutions = LoadFile(CacheFile);
+    foreach (var kvp in joltageSolutions)
     {
-        List<int> pushes = FindJoltageButtonCounts(machine).First();
-        lock (sw)
+        Console.WriteLine($"Loaded: {kvp.Key} => {String.Join(",", kvp.Value)}");
+    }
+
+    Dictionary<Machine, int> matches = machines
+        .Select(m => (Machine: m, Matches: joltageSolutions.Keys.Count(k => IsMatch(m, k))))
+        .Where(m => m.Matches > 0)
+        .ToDictionary();
+
+    Debug.Assert(matches.All(m => m.Value == 1));
+
+    Stopwatch sw = Stopwatch.StartNew();
+    int count = joltageSolutions.Count;
+    int joltageSum = machines
+        .Where(m => !matches.ContainsKey(m))
+        .AsParallel()
+        .Select((machine, i) =>
         {
-            Console.WriteLine($"\n{++count}/{machines.Count} [{i + 1}]: {machine}");
-            Console.WriteLine($"Pushes ({pushes.Sum()}): {String.Join(",", pushes)} [{sw.Elapsed}]");
+            List<int> pushes = FindJoltageButtonCounts2(machine).First();
+            lock (sw)
+            {
+                Console.WriteLine($"\n{++count}/{machines.Count} [{i + 1}]: {machine}");
+                Console.WriteLine($"Pushes ({pushes.Sum()}): {String.Join(",", pushes)} [{sw.Elapsed}]");
 
-            joltageSolutions[machine] = pushes;
-            AppendFile(machine, pushes, CacheFile);
-        }
-        return pushes.Sum();
-    })
-    .Sum();
+                joltageSolutions[machine] = pushes;
+                AppendFile(machine, pushes, CacheFile);
+            }
+            return pushes.Sum();
+        })
+        .Sum();
 
-SaveFile(joltageSolutions, CacheFile);
-joltageTotal = joltageSolutions.Sum(j => j.Value.Sum());
+    SaveFile(joltageSolutions, CacheFile);
+    joltageTotal = joltageSolutions.Sum(j => j.Value.Sum());
+}
 
 Console.WriteLine($"\nJoltage total: {joltageTotal}");
 
@@ -181,6 +190,68 @@ IEnumerable<List<int>> FindJoltageButtonCounts(Machine machine)
         }
     }
 }
+
+IEnumerable<List<int>> FindJoltageButtonCounts2(Machine machine)
+{
+    // Order buttons by descending number of outputs
+    Dictionary<int, Button[]> buttonsByJoltIndex = machine.Buttons
+        .SelectMany(b => b.JoltIndexes, (b, j) => (Button: b, JoltIndex: j))
+        .GroupBy(b => b.JoltIndex, b => b.Button)
+        .ToDictionary(
+            bs => bs.Key,
+            bs => bs.OrderByDescending(b => b.JoltIndexes.Length).ToArray()
+        );
+
+    // Order joltIndexes by ascending number of inputs
+    int[] joltIndexes = buttonsByJoltIndex
+        .OrderBy(js => js.Value.Length)
+        .Select(js => js.Key)
+        .ToArray();
+
+    var zeroPushes = ImmutableArray<int>.Empty.AddRange(Enumerable.Repeat(0, machine.Buttons.Count));
+    return Solve(machine.Joltages, zeroPushes, 0, 0);
+
+    IEnumerable<List<int>> Solve(int[] joltages, ImmutableArray<int> buttonPushes, int j, int b)
+    {
+        if (j == joltIndexes.Length)
+        {
+            if (joltages.All(j => j == 0))
+            {
+                yield return buttonPushes.ToList();
+            }
+        }
+        else
+        {
+            // Console.WriteLine($"{{{String.Join(",", joltages)}}} => {String.Join(",", buttonPushes)}");
+
+            int joltIndex = joltIndexes[j];
+            var buttons = buttonsByJoltIndex[joltIndex];
+            bool isLastButton = b == buttons.Length - 1;
+            (int jNext, int bNext) = isLastButton ? (j + 1, 0) : (j, b + 1);
+
+            var button = buttons[b];
+            int minPushes = isLastButton ? joltages[joltIndex] : 0;
+            int maxPushes = button.MaxPushes(joltages);
+
+            for (int pushes = maxPushes; pushes >= minPushes; --pushes) // if any
+            {
+                (int[] nextJoltages, var nextButtonPushes) = pushes == 0
+                    ? (joltages, buttonPushes)
+                    : (
+                        joltages.EquiZip(button.Vector, (j, b) => j - pushes * b).ToArray(),
+                        buttonPushes.SetItem(button.ButtonIndex, buttonPushes[button.ButtonIndex] + pushes)
+                    );
+                
+                var solutions = Solve(nextJoltages, nextButtonPushes, jNext, bNext);
+                foreach(var solution in solutions)
+                {
+                    yield return solution;
+                }
+            }
+        }
+    }
+}
+
 
 static bool IsMatch(Machine a, Machine b)
 {
