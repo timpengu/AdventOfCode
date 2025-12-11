@@ -1,40 +1,65 @@
 using MoreLinq;
 using System.Collections.Immutable;
 using System.Diagnostics;
+using System.Text;
 
-const string InputFile = "input.txt";
+const string InputFile = "input.hard.txt";
 const string CacheFile = $"solutions.{InputFile}";
 
+const string PyPath = "C:\\Users\\timpe\\AppData\\Local\\Programs\\Python\\Launcher\\py.exe";
 bool isEasy = false;
 
-List<Machine> machines = File.ReadLines(InputFile)
-    .Where(s => !s.Trim().StartsWith("//"))
-    .Select(Machine.Parse)
+List<(Machine Machine, ButtonPushes[] ButtonPushes)> inputs = File.ReadLines(InputFile)
+    .Where(s => !String.IsNullOrEmpty(s) && !s.Trim().StartsWith("//"))
+    .Select(Machine.ParseSolution)
+    .ToList();
+
+var machines = inputs
+    .Select(input => input.ButtonPushes.Any()
+        ? Reduce(input.Machine, input.ButtonPushes)
+        : input.Machine
+    )
     .ToList();
 
 int indicatorTotal = 0;
 int joltageTotal = 0;
 
-for (int m = 0; m < machines.Count; m++)
+foreach(var m in machines)
 {
-    var machine = machines[m];
-    Console.WriteLine($"\n{m+1}/{machines.Count}: {machine}");
-
-    List<int> indicatorSeq = FindIndicatorSequences(machine).First();
-    indicatorTotal += indicatorSeq.Count;
-    Console.WriteLine($"Indicator sequence: {String.Join(",", indicatorSeq)}");
-
-    if (isEasy)
+    Console.WriteLine($"\n{m}");
+    for (int j = 0; j < m.Joltages.Length; ++j)
     {
+        var row = m.Buttons.Select(b => b.Vector[j]).Append(m.Joltages[j]);
+        Console.WriteLine(String.Join(" ", row));
+
+        string py = BuildPy(m);
+        string result = ExecPy(py);
+        joltageTotal += int.Parse(result.Trim());
+    }
+}
+
+return;
+
+if (isEasy)
+{
+    for (int m = 0; m < machines.Count; m++)
+    {
+        var machine = machines[m];
+        Console.WriteLine($"\n{m + 1}/{machines.Count}: {machine}");
+
+        List<int> indicatorSeq = FindIndicatorSequences(machine).First();
+        indicatorTotal += indicatorSeq.Count;
+        Console.WriteLine($"Indicator sequence: {String.Join(",", indicatorSeq)}");
+
         Stopwatch sw = Stopwatch.StartNew();
         List<int> joltagePushes = FindJoltageButtonCounts2(machine).First();
         joltageTotal += joltagePushes.Sum();
         Console.WriteLine($"Joltage sequence ({joltagePushes.Sum()}): {String.Join(",", joltagePushes)} [{sw.Elapsed}]");
     }
-}
 
-Console.WriteLine($"\nIndicator total: {indicatorTotal}");
-Console.WriteLine();
+    Console.WriteLine($"\nIndicator total: {indicatorTotal}");
+    Console.WriteLine();
+}
 
 if (!isEasy)
 {
@@ -307,6 +332,97 @@ static void Write(StreamWriter sw, Machine machine, List<int> solution)
     sw.WriteLine($"{machine} | {String.Join(',', solution)}");
 }
 
+static Machine Reduce(Machine machine, params ButtonPushes[] fixPushes)
+{
+    int[] joltages = machine.Joltages.ToArray();
+
+    // reduce joltages by fixed pushes
+    foreach (var fix in fixPushes)
+    {
+        var button = machine.Buttons[fix.ButtonIndex];
+        for (int j = 0; j < joltages.Length; ++j)
+        {
+            joltages[j] -= button.Vector[j] * fix.Pushes;
+        }
+    }
+
+    // exclude fixed buttons and re-index remaining buttons
+    var buttons = machine.Buttons
+        .Where(b => !fixPushes.Select(f => f.ButtonIndex).Contains(b.ButtonIndex))
+        .Select((b, i) => new Button(i, b.JoltIndexes, b.JoltCount))
+        .ToList();
+
+    return new Machine(machine.Indicators, joltages, buttons);
+}
+
+static string BuildPy(Machine machine)
+{
+    int[] bs = machine.Buttons.Select(b => b.ButtonIndex).ToArray();
+
+    StringBuilder sb = new();
+
+    sb.AppendLine("from z3 import *");
+    sb.AppendLine();
+
+    sb.AppendLine("opt = Optimize()");
+    sb.AppendLine();
+
+    foreach (var b in machine.Buttons)
+    {
+        var v = ToLabel(b);
+        sb.AppendLine($"{v} = Int('{v}')"); // p0 = Int('p0')
+    }
+
+    sb.AppendLine("cost = Int('cost')");
+    sb.AppendLine();
+
+    foreach (var b in machine.Buttons)
+    {
+        sb.AppendLine($"opt.add({ToLabel(b)} >= 0)"); // opt.add(p0 >= 0)
+    }
+
+    // cost = Int('cost')
+    // opt.add(cost == p0 + p1 + p2 + p3 + p4 + p5 + p6 + p7 + p8 + p9 + p10 + p11 + p12)
+    sb.AppendLine($"opt.add(cost == {String.Join(" + ", machine.Buttons.Select(ToLabel))})");
+    sb.AppendLine();
+
+    for (int j = 0; j < machine.Joltages.Length; ++j)
+    {
+        var activeButtons = machine.Buttons.Where(b => b.Vector[j] == 1);
+        if (activeButtons.Any())
+        {
+            // opt.add(p4 + p5 + p6 + p9 + p10 + p11 == 86)
+            sb.AppendLine($"opt.add({String.Join(" + ", activeButtons.Select(ToLabel))} == {machine.Joltages[j]})");
+        }
+    }
+
+    sb.AppendLine();
+    sb.AppendLine("h = opt.minimize(cost)");
+    sb.AppendLine("opt.check()");
+    sb.AppendLine("print(opt.lower(h))");
+
+    return sb.ToString();
+
+    string ToLabel(Button b) => $"p{b.ButtonIndex}";
+}
+
+static string ExecPy(string script)
+{
+    string scriptPath = "script.py";
+    File.WriteAllText(scriptPath, script);
+    var startInfo = new ProcessStartInfo
+    {
+        FileName = PyPath,
+        Arguments = scriptPath,
+        UseShellExecute = false,
+        RedirectStandardOutput = true,
+    };
+    using var process = Process.Start(startInfo);
+    using StreamReader reader = process.StandardOutput;
+    string result = reader.ReadToEnd();
+    return result;
+}
+
 record Button(int ButtonIndex, int[] JoltIndexes, int JoltCount) : IEquatable<Button>
 {
     public int Count => JoltIndexes.Length;
@@ -330,8 +446,31 @@ record Button(int ButtonIndex, int[] JoltIndexes, int JoltCount) : IEquatable<Bu
 
 }
 
+record struct ButtonPushes(int ButtonIndex, int Pushes)
+{
+}
+
 record Machine(bool[] Indicators, int[] Joltages, List<Button> Buttons) : IEquatable<Machine>
 {
+    public static (Machine, ButtonPushes[]) ParseSolution(string line)
+    {
+        // e.g. "[.##.] (3) (1,3) (2) (2,3) (0,2) (0,1) {3,5,4,7} | 1,2,,4"
+
+        var parts = line.Split("|", 2, StringSplitOptions.TrimEntries);
+        Machine machine = Machine.Parse(parts[0]);
+        
+        List<int?> pushes = parts.Length < 2 ? [] :
+            parts[1].Split(",", StringSplitOptions.TrimEntries).Select(s => s.Length == 0 ? default(int?) : int.Parse(s)).ToList();
+
+        ButtonPushes[] buttonPushes = pushes
+            .Select((p, i) => (Pushes: p, ButtonIndex: i))
+            .Where(p => p.Pushes.HasValue)
+            .Select(p => new ButtonPushes(p.ButtonIndex, p.Pushes!.Value))
+            .ToArray();
+
+        return (machine, buttonPushes);
+    }
+
     public static Machine Parse(string line)
     {
         // e.g. "[.##.] (3) (1,3) (2) (2,3) (0,2) (0,1) {3,5,4,7}"
@@ -344,7 +483,7 @@ record Machine(bool[] Indicators, int[] Joltages, List<Button> Buttons) : IEquat
             .Select(s => s.Trim('(', ')').Split(',').Select(int.Parse).ToArray())
             .Select((bs, i) => new Button(i, bs, joltages.Length))
             .ToList();
-        
+
         Debug.Assert(indicators.Length == joltages.Length);
 
         return new Machine(indicators, joltages, buttons);
