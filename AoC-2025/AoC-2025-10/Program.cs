@@ -1,13 +1,20 @@
 using MoreLinq;
-using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Text;
 
-const string InputFile = "input.hard.txt";
+const string InputFile = "input.txt";
 const string CacheFile = $"solutions.{InputFile}";
+const string PyPath = "C:\\Python313\\python.exe";
 
-const string PyPath = "C:\\Users\\timpe\\AppData\\Local\\Programs\\Python\\Launcher\\py.exe";
-bool isEasy = false;
+bool isEasy = true; // InputFile.Contains("example");
+bool usePy = false;
+
+int[] x = [1, 2, 3, 4];
+var ys = x.OrderedCombinations().Select(s => s.ToArray());
+foreach (var y in ys)
+{
+    Console.WriteLine(String.Join(",", y));
+}
 
 List<(Machine Machine, ButtonPushes[] ButtonPushes)> inputs = File.ReadLines(InputFile)
     .Where(s => !String.IsNullOrEmpty(s) && !s.Trim().StartsWith("//"))
@@ -24,22 +31,6 @@ var machines = inputs
 int indicatorTotal = 0;
 int joltageTotal = 0;
 
-foreach(var m in machines)
-{
-    Console.WriteLine($"\n{m}");
-    for (int j = 0; j < m.Joltages.Length; ++j)
-    {
-        var row = m.Buttons.Select(b => b.Vector[j]).Append(m.Joltages[j]);
-        Console.WriteLine(String.Join(" ", row));
-
-        string py = BuildPy(m);
-        string result = ExecPy(py);
-        joltageTotal += int.Parse(result.Trim());
-    }
-}
-
-return;
-
 if (isEasy)
 {
     for (int m = 0; m < machines.Count; m++)
@@ -51,10 +42,13 @@ if (isEasy)
         indicatorTotal += indicatorSeq.Count;
         Console.WriteLine($"Indicator sequence: {String.Join(",", indicatorSeq)}");
 
-        Stopwatch sw = Stopwatch.StartNew();
-        List<int> joltagePushes = FindJoltageButtonCounts2(machine).First();
-        joltageTotal += joltagePushes.Sum();
-        Console.WriteLine($"Joltage sequence ({joltagePushes.Sum()}): {String.Join(",", joltagePushes)} [{sw.Elapsed}]");
+        // List<int> joltagePushes = FindJoltageButtonCounts2(machine).First();
+        // Console.WriteLine($"FindJoltageButtonCounts2 ({joltagePushes.Sum()}): {String.Join(",", joltagePushes)}");
+        List<int> joltagePushes3 = FindJoltageButtonCounts3(machine).First();
+        Console.WriteLine($"FindJoltageButtonCounts3 ({joltagePushes3.Sum()}): {String.Join(",", joltagePushes3)}");
+        joltageTotal += joltagePushes3.Sum();
+
+        Console.ReadLine();
     }
 
     Console.WriteLine($"\nIndicator total: {indicatorTotal}");
@@ -63,23 +57,66 @@ if (isEasy)
 
 if (!isEasy)
 {
-    var joltageSolutions = LoadFile(CacheFile);
-    foreach (var kvp in joltageSolutions)
+    Dictionary<Machine, int> pySolutions = new();
+    if (usePy)
+    {
+        foreach (var m in machines)
+        {
+            string py = BuildPy(m);
+            string result = ExecPy(py);
+            int solution = int.Parse(result.Trim());
+
+            pySolutions[m] = solution;
+
+            Console.WriteLine($"{m} => {solution}");
+        }
+
+        Console.WriteLine($"\nJoltage total: {pySolutions.Values.Sum()}");
+    }
+
+    Console.WriteLine($"\nLoading previous joltage solutions from: {CacheFile}");
+    var fileSolutions = LoadFile(CacheFile);
+    foreach (var kvp in fileSolutions)
     {
         Console.WriteLine($"Loaded: {kvp.Key} => {String.Join(",", kvp.Value)}");
     }
 
-    Dictionary<Machine, int> matches = machines
-        .Select(m => (Machine: m, Matches: joltageSolutions.Keys.Count(k => IsMatch(m, k))))
-        .Where(m => m.Matches > 0)
-        .ToDictionary();
+    List<IGrouping<Machine, int>> matches = machines
+        .SelectMany(
+            m => fileSolutions.Where(s => IsMatch(m, s.Key)),
+            (m, c) => (Machine: m, CachedSolution: c.Value.Sum()))
+        .GroupBy(v => v.Machine, v => v.CachedSolution)
+        .ToList();
 
-    Debug.Assert(matches.All(m => m.Value == 1));
+    Debug.Assert(matches.All(l => l.Count() == 1));
+
+    Dictionary<Machine, int> cachedSolutions = matches.ToDictionary(m => m.Key, m => m.First());
+
+    foreach (var m in machines)
+    {
+        if (!cachedSolutions.ContainsKey(m) || !pySolutions.ContainsKey(m))
+            continue;
+
+        int solutionDfs = cachedSolutions[m];
+        int solutionPy = pySolutions[m];
+        if (solutionDfs != solutionPy)
+        {
+            Console.WriteLine($"{m} => dfs:{solutionDfs} != py:{solutionPy}");
+        }
+    }
+
+    var machinesToSolve = machines.Where(m => !cachedSolutions.ContainsKey(m)).ToList();
+    
+    Console.WriteLine($"\nMachines to solve: {machinesToSolve.Count}/{cachedSolutions.Count}");
+    foreach (var machine in machinesToSolve)
+    {
+        Console.WriteLine(machine);
+    }
 
     Stopwatch sw = Stopwatch.StartNew();
-    int count = joltageSolutions.Count;
+    int count = fileSolutions.Count;
     int joltageSum = machines
-        .Where(m => !matches.ContainsKey(m))
+        .Where(m => !cachedSolutions.ContainsKey(m))
         .AsParallel()
         .Select((machine, i) =>
         {
@@ -89,15 +126,15 @@ if (!isEasy)
                 Console.WriteLine($"\n{++count}/{machines.Count} [{i + 1}]: {machine}");
                 Console.WriteLine($"Pushes ({pushes.Sum()}): {String.Join(",", pushes)} [{sw.Elapsed}]");
 
-                joltageSolutions[machine] = pushes;
+                fileSolutions[machine] = pushes;
                 AppendFile(machine, pushes, CacheFile);
             }
             return pushes.Sum();
         })
         .Sum();
 
-    SaveFile(joltageSolutions, CacheFile);
-    joltageTotal = joltageSolutions.Sum(j => j.Value.Sum());
+    SaveFile(fileSolutions, CacheFile);
+    joltageTotal = fileSolutions.Sum(j => j.Value.Sum());
 }
 
 Console.WriteLine($"\nJoltage total: {joltageTotal}");
@@ -156,11 +193,15 @@ IEnumerable<List<int>> FindJoltageButtonSequences(Machine machine)
         {
             foreach (var button in buttons)
             {
-                var nextState = (
-                    Joltages: state.Joltages.Zip(button.Vector, (j, b) => j - b).ToArray(),
-                    Sequence: state.Sequence.Append(button.ButtonIndex)
-                );
-                queue.Enqueue(nextState);
+                var nextJoltages = state.Joltages.Zip(button.Vector, (j, b) => j - b);
+                if (nextJoltages.All(j => j >= 0))
+                {
+                    var nextState = (
+                        Joltages: nextJoltages.ToArray(),
+                        Sequence: state.Sequence.Append(button.ButtonIndex)
+                    );
+                    queue.Enqueue(nextState);
+                }
             }
         }
     }
@@ -174,39 +215,35 @@ IEnumerable<List<int>> FindJoltageButtonCounts(Machine machine)
         .ThenByDescending(b => b.MaxPushes(machine.Joltages))
         .ToList();
 
-    List<int> GetResult(IEnumerable<int> buttonPushes)
-    {
-        // Map button pushes back to original button order
-        var result = new int[buttons.Count];
-        var ps = buttonPushes.Select((p, i) => (buttons[i].ButtonIndex, Pushes: p));
-        foreach (var p in ps)
-        {
-            result[p.ButtonIndex] = p.Pushes;
-        }
-        return result.ToList();
-    }
-
     return Solve(machine.Joltages, [], 0);
 
-    IEnumerable<List<int>> Solve(int[] joltages, IEnumerable<int> buttonPushes, int buttonIndex)
+    IEnumerable<List<int>> Solve(int[] joltages, IEnumerable<(Button,int)> buttonPushes, int buttonIndex)
     {
         if (buttonIndex == buttons.Count)
         {
             if (joltages.All(j => j == 0))
             {
-                yield return GetResult(buttonPushes);
+                yield return buttonPushes.ToPushCounts(machine.Buttons.Count).ToList();
             }
         }
         else
         {
             var button = buttons[buttonIndex];
+            bool isLastButton = buttonIndex == buttons.Count - 1;
+            
             int maxPushes = button.MaxPushes(joltages);
-            int minPushes = buttonIndex == buttons.Count - 1 ? maxPushes : 0;
+            int minPushes = isLastButton ? maxPushes : 0;
 
-            for (int pushes = maxPushes; pushes >= minPushes; --pushes)
+            for (int pushes = maxPushes; pushes >= minPushes; --pushes) // if any
             {
-                int[] nextJoltages = joltages.EquiZip(button.Vector, (j, b) => j - pushes * b).ToArray();
-                var solutions = Solve(nextJoltages, buttonPushes.Append(pushes), buttonIndex + 1);
+                (int[] nextJoltages, var nextButtonPushes) = (joltages, buttonPushes);
+                if (pushes > 0)
+                {
+                    nextJoltages = joltages.EquiZip(button.Vector, (j, b) => j - pushes * b).ToArray();
+                    nextButtonPushes = buttonPushes.Append((button, pushes));
+                }
+
+                var solutions = Solve(nextJoltages, nextButtonPushes, buttonIndex + 1);
                 foreach (var solution in solutions)
                 {
                     yield return solution;
@@ -233,50 +270,102 @@ IEnumerable<List<int>> FindJoltageButtonCounts2(Machine machine)
         .Select(js => js.Key)
         .ToArray();
 
-    var zeroPushes = ImmutableArray<int>.Empty.AddRange(Enumerable.Repeat(0, machine.Buttons.Count));
-    return Solve(machine.Joltages, zeroPushes, 0, 0);
+    return Solve(machine.Joltages, [], 0, 0);
 
-    IEnumerable<List<int>> Solve(int[] joltages, ImmutableArray<int> buttonPushes, int j, int b)
+    IEnumerable<List<int>> Solve(int[] joltages, IEnumerable<(Button,int)> buttonPushes, int j, int b)
     {
+        // Console.WriteLine($"Solve: {{{String.Join(",", joltages)}}} j={j} b={b}");
+
         if (j == joltIndexes.Length)
         {
             if (joltages.All(j => j == 0))
             {
-                yield return buttonPushes.ToList();
+                yield return buttonPushes.ToPushCounts(machine.Buttons.Count).ToList();
             }
         }
         else
         {
-            // Console.WriteLine($"{{{String.Join(",", joltages)}}} => {String.Join(",", buttonPushes)}");
-
             int joltIndex = joltIndexes[j];
             var buttons = buttonsByJoltIndex[joltIndex];
+            var button = buttons[b];
             bool isLastButton = b == buttons.Length - 1;
+
             (int jNext, int bNext) = isLastButton ? (j + 1, 0) : (j, b + 1);
 
-            var button = buttons[b];
-            int minPushes = isLastButton ? joltages[joltIndex] : 0;
             int maxPushes = button.MaxPushes(joltages);
+            int minPushes = isLastButton ? joltages[joltIndex] : 0;
 
-            for (int pushes = maxPushes; pushes >= minPushes; --pushes) // if any
+            var solutions = (j == 0 && b == 0)
+                ? Extensions.InclusiveRangeDescending(maxPushes, minPushes).AsParallel().SelectMany(SolveButton)
+                : Extensions.InclusiveRangeDescending(maxPushes, minPushes).SelectMany(SolveButton);
+
+            foreach (var solution in solutions)
             {
-                (int[] nextJoltages, var nextButtonPushes) = pushes == 0
-                    ? (joltages, buttonPushes)
-                    : (
-                        joltages.EquiZip(button.Vector, (j, b) => j - pushes * b).ToArray(),
-                        buttonPushes.SetItem(button.ButtonIndex, buttonPushes[button.ButtonIndex] + pushes)
-                    );
-                
-                var solutions = Solve(nextJoltages, nextButtonPushes, jNext, bNext);
-                foreach(var solution in solutions)
+                yield return solution;
+            }
+
+            IEnumerable<List<int>> SolveButton(int nextPushes)
+            {
+                (int[] nextJoltages, var nextButtonPushes) = (joltages, buttonPushes);
+                if (nextPushes > 0)
                 {
-                    yield return solution;
+                    nextJoltages = joltages.EquiZip(button.Vector, (j, b) => j - nextPushes * b).ToArray();
+                    nextButtonPushes = buttonPushes.Append((button, nextPushes));
                 }
+
+                return Solve(nextJoltages, nextButtonPushes, jNext, bNext);
             }
         }
     }
 }
 
+IEnumerable<List<int>> FindJoltageButtonCounts3(Machine machine)
+{
+    // Reorder buttons heuristically
+    List<Button> buttons = machine.Buttons
+        .OrderByDescending(b => b.JoltIndexes.Length)
+        .ThenByDescending(b => b.MaxPushes(machine.Joltages))
+        .ToList();
+
+    List<(Button Button, int Pushes)> buttonPushes = [];
+    int[] joltages = machine.Joltages;
+    for (int bit = 0; joltages.Any(j => j > 0); ++bit)
+    {
+        int mask = joltages.ToBitMask(bit);
+
+        // test button combos in order of increasing length
+        foreach (var buttonCombo in buttons.OrderedCombinations())
+        {
+            int nextMask = buttonCombo.Aggregate(mask, (m, b) => m ^ b.Mask);
+            if (nextMask == 0)
+            {
+                // found matching combo, decrement joltages..
+                foreach (var button in buttonCombo)
+                {
+                    for (int j = 0; j < joltages.Length; ++j)
+                    {
+                        joltages[j] -= button.Vector[j] << bit;
+                    }
+                }
+
+                // check and reject if overflow
+                if (joltages.Any(j => j < 0)) continue;
+                // TODO: implement backtracking if no combo matches!
+
+                // push buttons
+                foreach (var button in buttonCombo)
+                {
+                    buttonPushes.Add((button, 1 << bit));
+                }
+
+                Console.WriteLine($"{1 << bit} => {{{String.Join(",", joltages)}}} {String.Join(", ", buttonPushes.Select(b => $"{b.Button}:{b.Pushes}"))}");
+                break; // skip remaining (longer) combos
+            }
+        }
+    }
+
+    yield return buttonPushes.ToPushCounts(buttons.Count).ToList(); // only finds shortest first combo
+}
 
 static bool IsMatch(Machine a, Machine b)
 {
@@ -444,6 +533,7 @@ record Button(int ButtonIndex, int[] JoltIndexes, int JoltCount) : IEquatable<Bu
     public override int GetHashCode() =>
         JoltIndexes.Aggregate(ButtonIndex, (hash, j) => unchecked(hash * 31 + j));
 
+    public override string ToString() => $"B{ButtonIndex}";
 }
 
 record struct ButtonPushes(int ButtonIndex, int Pushes)
@@ -489,10 +579,12 @@ record Machine(bool[] Indicators, int[] Joltages, List<Button> Buttons) : IEquat
         return new Machine(indicators, joltages, buttons);
     }
 
-    public int IndicatorMask =>
-        Enumerable.Range(0, Indicators.Length)
+    // TODO: move into extension
+    public int IndicatorMask => Enumerable.Range(0, Indicators.Length)
         .Where(i => Indicators[i])
         .Aggregate(0, (mask, bit) => mask | (1 << bit));
+
+    public int JoltageMask(int bit) => Joltages.ToBitMask(bit);
 
     public virtual bool Equals(Machine? other) =>
         other != null &&
@@ -506,6 +598,66 @@ record Machine(bool[] Indicators, int[] Joltages, List<Button> Buttons) : IEquat
         .Concat(Buttons.Select(b => b.GetHashCode()))
         .Aggregate(17, (hash, val) => unchecked(hash * 31 + val));
 
-    public override string ToString() => $"[{String.Concat(Indicators.Select(b => b ? '#' : '.'))}] {String.Join(' ', Buttons.Select(b => $"({string.Join(',', b.JoltIndexes)})"))} {{{string.Join(',', Joltages)}}}";
+    public override string ToString() => $"[{Indicators.ToIndicatorString()}] {String.Join(' ', Buttons.Select(b => $"({string.Join(',', b.JoltIndexes)})"))} {{{string.Join(',', Joltages)}}}";
 }
 
+static class Extensions
+{
+    public static IEnumerable<int> EnumerateBits(this int maxValue)
+    {
+        if (maxValue < 0) throw new ArgumentOutOfRangeException(nameof(maxValue));
+
+        for (int bit = 0; maxValue >= (1 << bit); ++bit)
+        {
+            yield return bit;
+        }
+    }
+
+    public static IEnumerable<int> EnumerateBitsDescending(this int maxValue)
+    {
+        if (maxValue < 0) throw new ArgumentOutOfRangeException(nameof(maxValue));
+
+        int maxBit = 0; while (maxValue > (1 << maxBit)) ++maxBit;
+        for (int bit = --maxBit; bit >= 0; --bit)
+        {
+            yield return bit;
+        }
+    }
+
+    public static int ToBitMask(this int[] values, int bit) =>
+        Enumerable.Range(0, values.Length)
+        .Where(i => (values[i] & (1 << bit)) != 0)
+        .Aggregate(0, (mask, bit) => mask | (1 << bit));
+
+    public static string ToIndicatorString(this int mask, int bits) =>
+        InclusiveRangeDescending(bits - 1, 0)
+            .Select(bit => (mask & (1 << bit)) != 0)
+            .ToIndicatorString();
+
+    public static string ToIndicatorString(this IEnumerable<bool> indicators) =>
+        String.Concat(indicators.Select(b => b ? '#' : '.'));
+
+    public static IEnumerable<int> ToPushCounts(this IEnumerable<(Button Button, int Pushes)> buttonPushes, int buttonCount)
+    {
+        var pushesByButtonIndex = buttonPushes.ToLookup(b => b.Button.ButtonIndex, b => b.Pushes);
+        return Enumerable.Range(0, buttonCount).Select(i => pushesByButtonIndex[i].Sum());
+    }
+
+    public static IEnumerable<IEnumerable<T>> OrderedCombinations<T>(this IEnumerable<T> source)
+    {
+        var items = source.ToList();
+        
+        return Enumerable.Range(1, items.Count) // exclude zero-length combination
+            .SelectMany(k => Generate(0, items.Count, k));
+
+        IEnumerable<IEnumerable<T>> Generate(int h, int n, int k) =>
+            k == 0 ? [[]] : // yield single zero-length combination
+            Enumerable.Range(0, n - k + 1).SelectMany(i =>
+                Generate(h + i + 1, n - (i + 1), k - 1)
+                .Select(tail => tail.Prepend(items[h + i]))
+            );
+    }
+
+    public static IEnumerable<int> InclusiveRange(int min, int max) => min > max ? [] : MoreEnumerable.Sequence(min, max);
+    public static IEnumerable<int> InclusiveRangeDescending(int max, int min) => min > max ? [] : MoreEnumerable.Sequence(max, min);
+}
