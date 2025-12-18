@@ -1,12 +1,14 @@
 using MoreLinq;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Text;
 
 const string InputFile = "input.txt";
 const string PyPath = "C:\\Python313\\python.exe";
 
 bool useDFS1 = false;
-bool useDFS2 = true;
+bool useDFS2 = false;
+bool useDFS3 = false;
 bool usePy = false;
 
 List<Machine> machines = File.ReadLines(InputFile)
@@ -45,10 +47,16 @@ for (int m = 0; m < machines.Count; m++)
         Console.WriteLine($"FindJoltageButtonCounts2 ({joltagePushes2.Sum()}): {String.Join(",", joltagePushes2)}");
     }
 
-    List<int> joltagePushes3 = FindJoltageButtonCounts3(machine).MinBy(p => p.Sum()) ?? throw new Exception("No solution");
-    Console.WriteLine($"FindJoltageButtonCounts3 ({joltagePushes3.Sum()}): {String.Join(",", joltagePushes3)}");
+    if (useDFS3)
+    {
+        List<int> joltagePushes3 = FindJoltageButtonCounts3(machine).MinBy(p => p.Sum()) ?? throw new Exception("No solution");
+        Console.WriteLine($"FindJoltageButtonCounts3 ({joltagePushes3.Sum()}): {String.Join(",", joltagePushes3)}");
+    }
 
-    joltageTotal += joltagePushes3.Sum();
+    List<int> joltagePushesBFS = FindJoltageButtonCountsBFS(machine).First();
+    Console.WriteLine($"FindJoltageButtonCountsBFS ({joltagePushesBFS.Sum()}): {String.Join(",", joltagePushesBFS)}");
+    
+    joltageTotal += joltagePushesBFS.Sum();
 }
 
 Console.WriteLine();
@@ -224,13 +232,12 @@ IEnumerable<List<int>> FindJoltageButtonCounts2(Machine machine)
     }
 }
 
-// Part 2 third DFS attempt
+// Part 2 third DFS attempt with bitwise search
 // Generalisation of part 1 finds button combinations with zero parity in lowest bit of joltages, then finds remaining bits recursively
 // Much faster, but does not find minimal solutions first so need to enumerate all solutions
 IEnumerable<List<int>> FindJoltageButtonCounts3(Machine machine)
 {
     // TODO: Can improve heuristics to find shortest solution first? (avoid generating all solutions)
-    // TODO: Use BFS to search solutions concurrently and terminate when the shortest is found?
     // TODO: Simplify this by removing the masks? (but then more array copies?)
     // TODO: Use a struct vector type?
 
@@ -261,11 +268,7 @@ IEnumerable<List<int>> FindJoltageButtonCounts3(Machine machine)
             if (nextMask == 0)
             {
                 // found a combo that zeros the bit mask, update the joltages
-                int[] nextJoltages = buttonCombo.Length == 0 ? joltages :
-                    buttonCombo.Aggregate(
-                        joltages.ToArray(),
-                        (js, button) => js.ZipAssign(button.Vector, (j, v) => j - (v << bit)));
-
+                int[] nextJoltages = buttonCombo.Accumulate(joltages, (js, button) => js.ZipAssign(button.Vector, (j, v) => j - (v << bit)));
                 if (nextJoltages.All(j => j >= 0))
                 {
                     var nextButtonPushes = buttonCombo.Aggregate(buttonPushes, (p, b) => p.Append((b, 1 << bit)));                        
@@ -274,6 +277,52 @@ IEnumerable<List<int>> FindJoltageButtonCounts3(Machine machine)
                     {
                         yield return solution;
                     }
+                }
+            }
+        }
+    }
+}
+
+// Part 2 BFS/Dijkstra attempt with bitwise search
+// Improvement over DFS version, searches minimal solutions first and guarantees first result is minimal
+IEnumerable<List<int>> FindJoltageButtonCountsBFS(Machine machine)
+{
+    // TODO: Use a struct vector type?
+
+    // Use priority queue for BFS ordered by minimum number of pushes (Dijkstra)
+    PriorityQueue<State, int> queue = new();
+    void Enqueue(State state) => queue.Enqueue(state, state.Pushes.Sum());
+    bool TryDequeue([NotNullWhen(true)] out State? state) => queue.TryDequeue(out state, out var _);
+
+    int[] initialPushes = new int[machine.Buttons.Count];
+    State initialState = new(machine.Joltages, initialPushes, 0);
+    Enqueue(initialState);
+
+    while (TryDequeue(out var state))
+    {
+        // if all joltages are zero then this is a solution
+        if (state.Joltages.All(j => j == 0))
+        {
+            yield return state.Pushes.ToList();
+            continue;
+        }
+
+        // get joltage bitmask for current bit (to be zeroed by button pushes)
+        int mask = state.Joltages.ToBitMask(state.Bit);
+
+        // test all button combos
+        foreach (Button[] buttonCombo in machine.Buttons.OrderedCombinations())
+        {
+            int nextMask = buttonCombo.Aggregate(mask, (m, b) => m ^ b.Mask);
+            if (nextMask == 0)
+            {
+                // found a button combo that zeros this bit; calculate new joltages & pushes...
+                int[] nextJoltages = buttonCombo.Accumulate(state.Joltages, (js, button) => js.ZipAssign(button.Vector, (j, v) => j - (v << state.Bit)));
+                if (nextJoltages.All(j => j >= 0))
+                {
+                    int[] nextPushes = buttonCombo.Accumulate(state.Pushes, (pushes, button) => pushes[button.ButtonIndex] += 1 << state.Bit);
+                    State nextState = new(nextJoltages, nextPushes, state.Bit + 1);
+                    Enqueue(nextState);
                 }
             }
         }
@@ -347,6 +396,10 @@ static string ExecPy(string script)
     using StreamReader reader = process.StandardOutput;
     string result = reader.ReadToEnd();
     return result;
+}
+
+record State(int[] Joltages, int[] Pushes, int Bit)
+{
 }
 
 record Button(int ButtonIndex, int[] JoltIndexes, int JoltCount) : IEquatable<Button>
@@ -428,17 +481,28 @@ static class Extensions
     public static string ToIndicatorString(this IEnumerable<bool> indicators) =>
         String.Concat(indicators.Select(b => b ? '#' : '.'));
 
-    public static int[] ZipAssign(this int[] accumulator, IEnumerable<int> operand, Func<int, int, int> op)
+    public static TVector[] Accumulate<TSource,TVector>(this IEnumerable<TSource> source, TVector[] seed, Action<TVector[], TSource> accumulate) 
     {
-        var a = operand.GetEnumerator();
-        for (int i = 0; i < accumulator.Length; ++i)
+        var e = source.GetEnumerator();
+        if (!e.MoveNext()) return seed;
+
+        TVector[] result = seed.ToArray();
+        do accumulate(result, e.Current); while (e.MoveNext());
+
+        return result;
+    }
+
+    public static TVector[] ZipAssign<TVector>(this TVector[] targetVector, IEnumerable<TVector> sourceVector, Func<TVector, TVector, TVector> @operator)
+    {
+        var eSource = sourceVector.GetEnumerator();
+        for (int i = 0; i < targetVector.Length; ++i)
         {
-            if (!a.MoveNext())
+            if (!eSource.MoveNext())
                 throw new IndexOutOfRangeException();
 
-            accumulator[i] = op(accumulator[i], a.Current);
+            targetVector[i] = @operator(targetVector[i], eSource.Current);
         }
-        return accumulator;
+        return targetVector;
     }
 
     public static IEnumerable<int> ToPushCounts(this IEnumerable<(Button Button, int Pushes)> buttonPushes, int buttonCount)
