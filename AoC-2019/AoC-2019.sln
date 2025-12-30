@@ -23,6 +23,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AoC-2019-15", "AoC-2019-15\
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AoC-2019-17", "AoC-2019-17\AoC-2019-17.csproj", "{F7E38053-82B8-4851-B847-4B2C1402C668}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AoC-2019-19", "AoC-2019-19\AoC-2019-19.csproj", "{ACDAE365-1CB9-4695-A0A2-92645729208C}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -69,8 +71,15 @@ Global
 		{F7E38053-82B8-4851-B847-4B2C1402C668}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{F7E38053-82B8-4851-B847-4B2C1402C668}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{F7E38053-82B8-4851-B847-4B2C1402C668}.Release|Any CPU.Build.0 = Release|Any CPU
+		{ACDAE365-1CB9-4695-A0A2-92645729208C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{ACDAE365-1CB9-4695-A0A2-92645729208C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{ACDAE365-1CB9-4695-A0A2-92645729208C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{ACDAE365-1CB9-4695-A0A2-92645729208C}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {570D3C97-1509-41FF-B071-8A813F902304}
 	EndGlobalSection
 EndGlobal
