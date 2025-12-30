@@ -1,0 +1,15 @@
+NOT B J  # ground missing at 2(B) ?
+NOT C T
+OR T J   # or ground missing at 3(C)?
+
+AND E T  # reset T
+OR E T   # ground exists at 5(E) to continue after landing?
+OR H T   # or ground exists at 8(H) to land a second jump?
+
+AND D T  # and ground exists at 4(D) to land a first jump?
+AND T J  # and there is gound missing at 2 or 3
+
+NOT A T
+OR T J   # or ground is missing at 1(A) so no choice except to jump
+
+RUN
