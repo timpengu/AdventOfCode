@@ -1,14 +1,11 @@
 ﻿using IntCode;
 
-class Nic
+class Nic : INode
 {
-    public class SentPacketEventArgs(Packet packet) : EventArgs
-    {
-        public Packet Packet { get; } = packet;
-    }
-
     public int Id { get; }
     public event EventHandler<SentPacketEventArgs>? SentPacket;
+
+    public bool IsIdle { get; private set; } = false;
 
     private readonly Computer<long> _computer;
     private readonly Queue<long> _inputs = new();
@@ -22,12 +19,14 @@ class Nic
         _inputs.Enqueue(id);
     }
 
-    public async Task ExecuteAsync()
+    public async Task ExecuteAsync(CancellationToken cancellationToken)
     {
         Console.WriteLine($"{this} started");
 
         while (!_computer.IsHalted)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             // Console.WriteLine($"{this} @{_computer.Ip}: {_computer[_computer.Ip]}");
             _computer.ExecuteOne();
 
@@ -45,12 +44,13 @@ class Nic
     public void ReceivePacket(Packet packet)
     {
         if (packet.DestinationId != Id)
-            throw new InvalidOperationException($"Packet for NIC[{packet.DestinationId}] received by NIC[{Id}]");
+            throw new InvalidOperationException($"Packet for NIC[{packet.DestinationId}] received by {this}");
 
         lock (_inputs)
         {
             _inputs.Enqueue(packet.Payload.X);
             _inputs.Enqueue(packet.Payload.Y);
+            IsIdle = false;
         }
     }
 
@@ -58,7 +58,12 @@ class Nic
     {
         lock (_inputs)
         {
-            long input = _inputs.TryDequeue(out var value) ? value : -1;
+            if (!_inputs.TryDequeue(out var input))
+            {
+                input = -1;
+                IsIdle = true;
+            }
+
             // Console.WriteLine($"{this} in {input}");
             return input;
         }
